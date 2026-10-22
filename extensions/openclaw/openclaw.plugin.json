@@ -1,0 +1,34 @@
+{
+  "id": "deja-vu",
+  "name": "deja-vu",
+  "description": "Memory from the coding sessions already on this machine — recalled before each turn, searchable as tools",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["deja_recall", "deja_fix", "deja_blame"],
+    "agentToolResultMiddleware": ["openclaw"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "bin": {
+        "type": "string",
+        "description": "Path to the deja binary. Default: DEJA_BIN, the deja on PATH, the usual install locations, then the copy bundled with this package."
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "description": "Put relevant history in front of the model before each turn. Default true."
+      },
+      "tools": {
+        "type": "boolean",
+        "description": "Register deja_recall, deja_fix and deja_blame. Default true."
+      },
+      "receipt": {
+        "type": "boolean",
+        "description": "In a 1:1 chat with the owner on a channel, add deja's one-line \"you've been here\" receipt under a reply that was answered from history. Default true."
+      }
+    }
+  }
+}

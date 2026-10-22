@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Goose stores its history — session format</title>
+<meta name="description" content="Where Goose writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/goose.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Goose stores its history — session format">
+<meta property="og:description" content="Where Goose writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/goose.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Goose stores its history — session format">
+<meta name="twitter:description" content="Where Goose writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Goose writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Goose","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/goose.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/goose.html","name":"Goose","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html" aria-current="page">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Goose</h1>
+<ul>
+<li><strong>ID</strong>: <code>goose</code></li>
+<li><strong>Store (current, macOS and Linux)</strong>: <code>$XDG_DATA_HOME/goose/sessions/sessions.db</code>, default <code>~/.local/share/goose/sessions/sessions.db</code> (SQLite, Goose &gt;= 1.10.0). goose resolves its directories through etcetera&#39;s <code>choose_app_strategy</code>, which is XDG on macOS too; the Apple layout is <code>choose_native_strategy</code> (<code>crates/goose/src/config/paths.rs</code>)</li>
+<li><strong>Store (current, Windows)</strong>: <code>%APPDATA%\Block\goose\data\sessions\sessions.db</code></li>
+<li><strong>Store (legacy)</strong>: <code>sessions/*.jsonl</code> in any of those roots (pre-1.10.0; files remain on disk after migration), plus <code>~/.local/share/Block/goose</code>, <code>~/Library/Application Support/Block/goose</code> and <code>~/Library/Application Support/goose</code></li>
+<li><strong>Relocation</strong>: <code>GOOSE_PATH_ROOT</code> moves config, data and state together, and is then the whole answer</li>
+<li><strong>Read override</strong>: <code>DEJA_GOOSE_ROOT</code> (takes precedence for reads); <code>DEJA_GOOSE_DB</code> for the SQLite path</li>
+<li><strong>Format</strong>: legacy JSONL (metadata header + message records) and SQLite relational store</li>
+</ul>
+<p>Legacy JSONL: the first line is session metadata (<code>description</code>, <code>id</code>, <code>working_dir</code>,</p>
+<p><code>created_at</code>, <code>updated_at</code>); subsequent lines are messages with <code>role</code>, <code>created</code> (unix</p>
+<p>seconds) and <code>content</code> blocks (<code>type: text</code> only for v1). SQLite: <code>sessions</code> joined to</p>
+<p><code>messages</code> on <code>session_id</code>; <code>content_json</code> is a JSON array of content blocks.</p>
+<ul>
+<li><strong>MCP</strong>: <code>deja install goose</code> adds the server as an extension in</li>
+</ul>
+<p><code>~/.config/goose/config.yaml</code> (<code>$XDG_CONFIG_HOME/goose</code>,</p>
+<p><code>%APPDATA%\Block\goose\config</code> on Windows, <code>$GOOSE_PATH_ROOT/config</code> when</p>
+<p>that is set).</p>
+<ul>
+<li><strong>Skill</strong>: the shared <code>~/.agents/skills/deja-history/SKILL.md</code>.</li>
+<li><strong>Command</strong>: Goose declares commands in the same config rather than a</li>
+</ul>
+<p>commands directory, so <code>/deja</code> is a recipe entry there.</p>
+<ul>
+<li><strong>Auto-recall</strong>: <code>SessionStart</code> and <code>UserPromptSubmit</code> hooks in</li>
+</ul>
+<p><code>~/.agents/plugins/deja/hooks/hooks.json</code> (<code>$GOOSE_PATH_ROOT/.agents/plugins</code></p>
+<p>when that is set). Goose discards what a hook prints,</p>
+<p>so neither answers on stdout: they write the file Goose re-reads, which is a</p>
+<p>marked block in <code>~/.config/goose/AGENTS.md</code> at session start and the MOIM file</p>
+<p>per prompt. <code>.goosehints</code> is where the block used to go; what deja wrote there</p>
+<p>is cleared, and anything else in that file is left alone. A <code>SessionEnd</code></p>
+<p>hook runs <code>deja hook-session-end</code>, so the session is back in the next one&#39;s</p>
+<p>MCP recall straight away. A <code>Stop</code></p>
+<p>hook runs <code>deja hook-stop</code>: a Stop hook&#39;s <code>{&#34;decision&#34;:&#34;block&#34;,&#34;reason&#34;}</code></p>
+<p>is the one hook answer goose puts in front of the model, as a user message</p>
+<p>in the same turn (agent.rs). It blocks only when something waits: the fix</p>
+<p>pair for a command that failed this turn, read from <code>sessions.db</code> because</p>
+<p>the failure event carries no output, the packet for a compaction this</p>
+<p>turn, found in <code>sessions.db</code> by its agent-only note, or the pre-edit line</p>
+<p>for each file the turn&#39;s <code>edit</code>, <code>write</code> or <code>text_editor</code> calls changed.</p>
+<p>Each is handed over once.</p>
+<ul>
+<li><strong>Status line</strong>: goose has none. The one hook output it shows the person is</li>
+</ul>
+<p>a <code>SessionStart</code> hook&#39;s <code>{&#34;banner&#34;: …}</code>, printed once when an interactive</p>
+<p><code>goose session</code> opens (goose-cli session/mod.rs), so the <code>SessionStart</code></p>
+<p>hook prints <code>deja statusline</code> there. <code>goose run</code> shows no banner.</p>
+<ul>
+<li><strong>Resume</strong>: <code>goose session --resume --session-id &lt;id&gt;</code>. A session no longer in <code>sessions.db</code> (deleted in goose) is refused with a pointer to <code>deja show</code>.</li>
+<li><strong>Handoff</strong>: exec, <code>goose run -t</code>.</li>
+<li><strong>Prerequisite</strong>: the per-prompt half needs <code>GOOSE_MOIM_MESSAGE_FILE</code>, which</li>
+</ul>
+<p>the <code>deja goose</code> wrapper sets.</p>
+<h2 id="what-the-other-hook-events-can-carry">What the other hook events can carry</h2>
+<p>Goose has eleven hook events (twelve on 1.49, which adds <code>PreToolUseResult</code>).</p>
+<p>deja wires four. Apart from <code>SessionEnd</code> and <code>Stop</code>, the rest were measured on a stand — isolated HOME, a recording</p>
+<p>endpoint, a hook on every event writing a marker into the MOIM file and a</p>
+<p><code>{&#34;additionalContext&#34;: …}</code> on stdout — on 1.46.0 and again on 1.49.0, with the</p>
+<p>same result both times.</p>
+<p>One turn whose shell command exits 3 fires <code>SessionStart</code>, <code>UserPromptSubmit</code>,</p>
+<p><code>PreToolUse</code>, <code>BeforeShellExecution</code>, <code>PostToolUseFailure</code>, <code>Stop</code> and</p>
+<p><code>SessionEnd</code>; <code>PostToolUse</code> and <code>AfterShellExecution</code> do not fire on a failure.</p>
+<p>Every tool event carries the same four fields — <code>event</code>, <code>session_id</code>,</p>
+<p><code>tool_name</code>, <code>tool_input</code>, plus <code>working_dir</code> — and no output, no error text and</p>
+<p>no exit code. <code>Stop</code> carries <code>last_assistant_message</code>.</p>
+<p>Two things follow, and they are why the others stay unwired:</p>
+<ul>
+<li>Hook stdout is discarded. No marker written there appeared in any recorded</li>
+</ul>
+<p>request, on either version.</p>
+<ul>
+<li>The MOIM file is re-read at each prompt, not between tool calls. A marker</li>
+</ul>
+<p>written by <code>PostToolUseFailure</code> is absent from the request Goose sends</p>
+<p>straight after the failure and present in the next prompt&#39;s. So a fix pair</p>
+<p>wired to that event would arrive one turn late, where the prompt hook already</p>
+<p>speaks — and with no error in the payload to key it on (#2952, #2956).</p>
+<p>Requested in <a href="https://github.com/vshulcz/deja-vu/issues/255">#255</a>.</p>
+<p><strong>Last verified:</strong> 2026-09-07</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Kiro stores its history — session format</title>
+<meta name="description" content="Where Kiro writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/kiro.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Kiro stores its history — session format">
+<meta property="og:description" content="Where Kiro writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/kiro.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Kiro stores its history — session format">
+<meta name="twitter:description" content="Where Kiro writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Kiro writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Kiro","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/kiro.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/kiro.html","name":"Kiro","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html" aria-current="page">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Kiro</h1>
+<ul>
+<li><strong>ID</strong>: <code>kiro</code></li>
+<li><strong>Store (CLI)</strong>: <code>~/.kiro/sessions/cli/&lt;sessionId&gt;.jsonl</code>, with the header <code>~/.kiro/sessions/cli/&lt;sessionId&gt;.json</code> beside it</li>
+<li><strong>Store (IDE)</strong>: <code>~/.kiro/sessions/&lt;workspace&gt;/sess_&lt;uuid&gt;/messages.jsonl</code>, with <code>session.json</code> beside it</li>
+<li><strong>Store (headless CLI)</strong>: <code>kiro-cli/data.sqlite3</code> in the local data directory (<code>~/Library/Application Support</code> on macOS, <code>~/.local/share</code> on Linux, <code>%LOCALAPPDATA%</code> on Windows), table <code>conversations_v2</code></li>
+<li><strong>Read override</strong>: <code>DEJA_KIRO_ROOT</code> replaces the session root, <code>DEJA_KIRO_DB</code> the database</li>
+<li><strong>Format</strong>: JSONL, one shape per client, and a SQLite row per headless conversation</li>
+<li><strong>Needs</strong>: <code>sqlite3</code> for the database only</li>
+</ul>
+<p>Kiro (kiro.dev) ships a CLI and an IDE — a VS Code fork — and they do not write</p>
+<p>the same file. The CLI stores a pair per session: a header naming the session id</p>
+<p>and the directory it ran in, and a transcript whose records are</p>
+<p><code>{&#34;kind&#34;:&#34;Prompt&#34;|&#34;AssistantMessage&#34;,&#34;data&#34;:{…}}</code> with the text in</p>
+<p><code>data.content[].data</code> and <code>data.meta.timestamp</code> in seconds. The IDE stores one</p>
+<p>directory per session under the workspace, holding <code>session.json</code> (id, model,</p>
+<p><code>workspacePaths</code>, timestamps) and <code>messages.jsonl</code>, whose lines carry</p>
+<p><code>payload.type</code> and <code>payload.content</code> with an RFC 3339 <code>timestamp</code>.</p>
+<p><code>kiro-cli chat --no-interactive</code> writes neither file. Each conversation is a</p>
+<p>row of <code>conversations_v2</code> keyed by the directory it ran in, and the row&#39;s JSON</p>
+<p><code>history</code> holds the turns: a <code>Prompt</code> or <code>ToolUseResults</code> user side, a</p>
+<p><code>ToolUse</code> or <code>Response</code> assistant side. `kiro-cli chat --resume-id</p>
+<p>&lt;conversation_id&gt;` reopens a row.</p>
+<p><strong>Last verified:</strong> 2026-10-08</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li>Resume: <code>cd &lt;cwd&gt; &amp;&amp; kiro-cli chat --resume-id &lt;sessionId&gt;</code>, which needs</li>
+</ul>
+<p>Kiro CLI 2.2.0 or newer. kiro-cli finds a session by id from any directory,</p>
+<p>but runs it in the current one and rewrites the header&#39;s <code>cwd</code> to it, so the</p>
+<p>command runs in the directory the header names (#4305). With that directory</p>
+<p>gone the <code>cd</code> is left out and deja notes where it will run instead (#4460).</p>
+<ul>
+<li><strong><code>sess_</code> is not only the IDE&#39;s.</strong> <code>kiro-cli --v3</code> (2.22.0 ships the V3</li>
+</ul>
+<p>engine behind that flag) writes the same <code>&lt;workspace&gt;/sess_&lt;uuid&gt;</code> layout</p>
+<p>and adds each session to <code>~/.kiro/session-index/&lt;workspace&gt;.jsonl</code>. A</p>
+<p>session listed there resumes with `kiro-cli --v3 chat --resume-id</p>
+<p>sess_&lt;uuid&gt;<code> in its first </code>workspacePaths` directory; one that is not is the</p>
+<p>IDE&#39;s, reopens from the app, and <code>deja resume</code> says so (#4307). On a</p>
+<p>logged-in 2.22.0 TUI turn V3 writes the answer as <code>assistant</code> records with</p>
+<p><code>operationType: &#34;Say&#34;</code>, the call as <code>tool_call</code> (<code>execute_bash</code> with</p>
+<p><code>args.command</code>, <code>status</code>, <code>actionType</code>) and its output as <code>tool_result</code>;</p>
+<p>all three are read. Its thinking is an <code>assistant</code> record too, with</p>
+<p><code>operationType: &#34;Reasoning&#34;</code>, <code>&#34;...&#34;</code> for content and the text encrypted</p>
+<p>in <code>reasoningSignature</code>: it is not an answer and is dropped.</p>
+<p><code>session_start</code> carries the system prompt and <code>pending_interaction</code> /</p>
+<p><code>interaction_resolved</code> the approval prompt; neither is a turn.</p>
+<ul>
+<li><strong>A reply arrives in pieces.</strong> Several <code>AssistantMessage</code> records can share</li>
+</ul>
+<p>one <code>data.message_id</code>: the CLI appends the answer as it streams, each record</p>
+<p>carrying the next piece rather than the whole answer so far. Read one message</p>
+<p>per record and a recall quotes a third of a sentence, so a run under one id is</p>
+<p>joined in order. tokscale&#39;s reader sums the same records for the same reason</p>
+<p>(<code>crates/tokscale-core/src/sessions/kiro.rs</code>).</p>
+<ul>
+<li><strong>Two shapes in one IDE file.</strong> Current builds write the <code>payload</code> wrapper;</li>
+</ul>
+<p>before that the same file held flat <code>{&#34;role&#34;:…,&#34;content&#34;:…}</code> lines. Both are</p>
+<p>read, so a store that predates the change is not lost.</p>
+<ul>
+<li>The IDE file also carries the agent&#39;s own bookkeeping — <code>session_metadata</code>,</li>
+</ul>
+<p><code>usage_summary</code>, <code>turn_end</code>. Those are not turns: a record whose type is not</p>
+<p>one is dropped rather than attributed to a role, and a test pins that. A</p>
+<p><code>tool_call</code> record is not a turn either, but it holds the call: <code>toolName</code></p>
+<p>and <code>args</code> are read into commands (<code>execute_bash</code>, <code>execute_pwsh</code>), files,</p>
+<p>edits and written lines (<code>fs_write</code> and <code>fs_append</code> with <code>path</code> and <code>text</code>,</p>
+<p><code>str_replace</code> with <code>oldStr</code>/<code>newStr</code>, <code>read_file</code>, <code>delete_file</code> with</p>
+<p><code>targetFile</code>). The engine writes one such line per state an action passes</p>
+<p>through; only the one that says how it ended (<code>completed</code> or <code>failed</code>) is</p>
+<p>read, a <code>denied</code> call is not, and a failed edit keeps its file but not its</p>
+<p>sides (#4506).</p>
+<ul>
+<li><strong>Tool calls.</strong> The TUI writes <code>toolUse</code> parts inside an</li>
+</ul>
+<p><code>AssistantMessage</code> and the results as a <code>ToolResults</code> record; the database</p>
+<p>has <code>tool_uses</code> and <code>ToolUseResults</code>. The TUI names its tools <code>shell</code>,</p>
+<p><code>write</code> and <code>read</code> (<code>content</code>, <code>oldStr</code>, <code>newStr</code>, <code>operations[].path</code>); the</p>
+<p>headless path keeps <code>execute_bash</code>, <code>fs_write</code> and <code>fs_read</code> (<code>file_text</code>,</p>
+<p><code>old_str</code>, <code>new_str</code>). Both are read into commands, files, edits and tool</p>
+<p>output (#4299). A command carries <code>→ exit N</code> from its result&#39;s</p>
+<p><code>exit_status</code> (#4505). Only the <code>Prompt</code> record carries a timestamp, so the reply</p>
+<p>and its calls take the prompt&#39;s.</p>
+<ul>
+<li><strong>Not read yet.</strong> The IDE mirrors chats into its globalStorage</li>
+</ul>
+<p>(<code>kiro.kiroagent/&lt;workspace&gt;/*.chat</code> beside extensionless execution records).</p>
+<p>No sample is in hand, and a reader built against a guessed shape is one that</p>
+<p>drops history without saying so.</p>
+<ul>
+<li>Wiring: <code>deja install kiro</code> writes the server into</li>
+</ul>
+<p><code>~/.kiro/settings/mcp.json</code>, which the CLI and the IDE both read — the same</p>
+<p>file <code>kiro-cli mcp add --scope global</code> writes. One thing the installer</p>
+<p>cannot do for you: a custom agent (<code>~/.kiro/agents/&lt;name&gt;.json</code>) reads the</p>
+<p>global servers only when it sets <code>&#34;includeMcpJson&#34;: true</code>, and the install</p>
+<p>note says so. The agent <code>kiro-auto</code> writes sets it.</p>
+<ul>
+<li>Guidance: <code>deja install kiro</code> writes <code>~/.kiro/steering/deja.md</code>, the global</li>
+</ul>
+<p>half of steering — scanned for every project, alongside the workspace one.</p>
+<p>It is four lines on purpose. A steering document declares an inclusion mode,</p>
+<p>and the only mode measured as loaded by kiro-cli is <code>always</code>: <code>manual</code> is not</p>
+<p>loaded and cannot be invoked from a session, <code>fileMatch</code> was withheld</p>
+<p>(KiroCrew&#39;s steering reference, measured against 2.19.1). So this text is in</p>
+<p>front of every turn whether it is wanted or not, which is why it names the</p>
+<p>tool and stops rather than carrying the full skill deja writes where a skill</p>
+<p>is loaded on demand.</p>
+<ul>
+<li>Skill: <code>deja install kiro</code> also writes <code>~/.kiro/skills/deja-history/SKILL.md</code>.</li>
+</ul>
+<p>On kiro-cli 2.28 a skill there is listed in <code>disclose_context</code> in both</p>
+<p>engines (#4802).</p>
+<ul>
+<li>Command: <code>~/.kiro/prompts/deja.md</code>, a global prompt. V3 lists it in slash</li>
+</ul>
+<p>completion as <code>/deja</code>; V2 takes <code>@deja</code> or <code>/prompts get deja</code>. The 2.22.0</p>
+<p>TUI lists it as <code>/deja</code> (&#34;Prompt from global&#34;) and sends the file as the user</p>
+<p>message with the arguments in it. The file has no frontmatter, since a</p>
+<p>prompt is sent as written.</p>
+<ul>
+<li>Global hooks: <code>deja install kiro-auto</code> writes <code>~/.kiro/hooks/deja.json</code></li>
+</ul>
+<p>(<code>{&#34;version&#34;:&#34;v1&#34;,&#34;hooks&#34;:[…]}</code>): SessionStart runs <code>hook-context --plain</code>,</p>
+<p>UserPromptSubmit <code>hook-prompt --plain</code>, SessionEnd <code>hook-session-end</code>. The</p>
+<p>IDE and the <code>kiro-cli --v3</code> TUI run it in every chat, whatever the agent;</p>
+<p><code>--v3 --no-interactive</code> runs none of it. Both outputs reach the model. On</p>
+<p>2.28 SessionEnd fires on leaving the TUI; 2.22.0 maps SessionEnd to Stop,</p>
+<p>so there it fires after every turn and not on <code>/quit</code>. A turn-end clear is</p>
+<p>harmless: the next prompt marks the session live again. PreToolUse and</p>
+<p>PostToolUse stdout is dropped</p>
+<p>(<code>sendStdout:false</code> in <code>acp-server.js</code>), so a pre-edit line or a fix for a</p>
+<p>failed command can only ride the next prompt, which waits on deferred</p>
+<p>delivery. The default V2 engine ignores this file and runs the agent below.</p>
+<ul>
+<li>Auto-recall: <code>deja install kiro-auto</code> writes the above and an agent of</li>
+</ul>
+<p>deja&#39;s own, <code>~/.kiro/agents/deja.json</code> (<code>tools: [&#34;*&#34;]</code>, <code>includeMcpJson</code>),</p>
+<p>with two hooks: <code>agentSpawn</code> runs <code>deja hook-context --plain</code> and</p>
+<p><code>userPromptSubmit</code> runs <code>deja hook-prompt --plain</code>. kiro-cli adds what those</p>
+<p>print to the model&#39;s context, the agentSpawn output for the whole</p>
+<p>conversation; what <code>preToolUse</code> and <code>postToolUse</code> print is not sent. So</p>
+<p>two more hooks hold their answer for the next <code>userPromptSubmit</code>, which</p>
+<p>hands it over once: <code>preToolUse</code> runs <code>deja hook-tool --defer</code> for the line</p>
+<p>about a file <code>write</code>, <code>fs_write</code>, <code>fs_append</code> or <code>str_replace</code> edits, and</p>
+<p><code>postToolUse</code> runs <code>deja hook-tool-after --defer</code> for the fix pair of a</p>
+<p>failed <code>shell</code> or <code>execute_bash</code>. Both arrive after the step they are about.</p>
+<p><code>stop</code> runs <code>deja hook-session-end</code>: V2 has no session end, and stop fires</p>
+<p>after every turn, so a finished session reaches the next one&#39;s MCP recall</p>
+<p>at once instead of staying marked live for twenty minutes (#5152). An</p>
+<p>agent hook may name no session, so the working directory keys it. The hooks run in that agent only:</p>
+<p><code>kiro-cli chat --agent deja</code>, or <code>kiro-cli agent set-default deja</code>. The</p>
+<p>built-in <code>kiro_default</code> takes no hooks from a file (a <code>kiro_default.json</code> is</p>
+<p>ignored), and deja does not switch <code>chat.defaultAgent</code>, which would trade</p>
+<p>the default agent&#39;s prompt for its own. <code>deja doctor</code> reads the row as</p>
+<p><code>installed</code> until <code>chat.defaultAgent</code> is <code>deja</code> and that agent file still</p>
+<p>runs deja&#39;s hooks (kiro-cli falls back to <code>kiro_default</code> when it is gone,</p>
+<h1 id="5200-and-uninstall-removes-that-setting-when-it-names-deja-s-agent">5200), and uninstall removes that setting when it names deja&#39;s agent.</h1>
+<p>kiro-cli edits the agent in place — <code>kiro-cli mcp add --agent deja</code> adds a</p>
+<p>server, <code>kiro-cli agent upgrade</code> turns the hooks into a list — so install</p>
+<p>and uninstall touch only deja&#39;s keys and hook entries, in either shape, and</p>
+<p>uninstall keeps the file while something of the reader&#39;s is in it (#5199). The IDE&#39;s <code>.kiro/hooks/</code> are a</p>
+<p>different system: per workspace, fired on file events (#4304).</p>
+<ul>
+<li>Sub-agents: 2.32&#39;s <code>subagent</code> tool runs each stage as a session of its own,</li>
+</ul>
+<p>whose hooks name only that session. The header beside its transcript names</p>
+<p>the spawner in <code>parent_session_id</code>, which deja reads, so the sub-agent hangs</p>
+<p>under it and its digest and recall leave the parent out (#5153).</p>
+<p><code>session_created_reason</code> says <code>subagent</code> on top-level sessions too and is</p>
+<p>not read.</p>
+<h2 id="measured-on-a-live-install">Measured on a live install</h2>
+<p><code>kiro-cli</code> 2.22.0 with its own mock model (<code>KIRO_MOCK_CHAT_RESPONSE</code>), after</p>
+<p><code>deja install kiro-auto</code>: <code>kiro-cli chat --no-interactive --agent deja</code> sent a</p>
+<p>request whose context carried the <code>&lt;deja-recall&gt;</code> digest naming the earlier</p>
+<p>kiro session in that directory and its answer. A probe agent with all five</p>
+<p>hooks echoing a marker showed the agentSpawn and userPromptSubmit markers in</p>
+<p>the request and the preToolUse and postToolUse ones nowhere.</p>
+<p>The 2.22.0 TUI (<code>kiro-cli chat --agent deja</code>, same mock, request bodies read</p>
+<p>from its trace log): a <code>write</code> to a file two earlier sessions decided about</p>
+<p>parked the pre-edit line, and the next prompt&#39;s request carried it in the</p>
+<p>hook context ahead of the user message. A failed <code>shell</code> call did the same</p>
+<p>with its fix pair. <code>/deja retry loop</code> sent <code>deja.md</code> as the user message with</p>
+<p>the query in its command. A rule from <code>deja rules sync</code> reached the request</p>
+<p>through <code>~/.kiro/steering/deja-rules.md</code>. <code>/quit</code> ran no SessionEnd: the V2</p>
+<p>agent has none.</p>
+<p><code>kiro-cli</code> 2.22.0 (homebrew cask), in a hermetic HOME:</p>
+<ul>
+<li><code>deja install kiro</code> writes <code>~/.kiro/settings/mcp.json</code> and</li>
+</ul>
+<p><code>~/.kiro/steering/deja.md</code>, and says the one thing a reader has to know: a</p>
+<p>custom agent in <code>~/.kiro/agents/*.json</code> reads the global MCP servers only with <code>&#34;includeMcpJson&#34;: true</code>.</p>
+<ul>
+<li><code>--resume-id &lt;SESSION_ID&gt;</code> is in its own help, which is the command</li>
+</ul>
+<p><code>deja resume</code> prints for a CLI session. <code>-r</code>, <code>--resume-picker</code> are beside it.</p>
+<ul>
+<li>The steering file is loaded: its text is in the request.</li>
+</ul>
+<p><code>kiro-cli</code> 2.22.0 logged in, real model, hermetic HOME holding only the login:</p>
+<ul>
+<li><code>kiro-cli mcp list</code> lists <code>deja</code> for <code>kiro_default</code> and under global. In</li>
+</ul>
+<p><code>kiro-cli chat --no-interactive --agent deja</code> the model called the <code>deja</code></p>
+<p>tool (<code>mode: recall</code>) and answered from what it returned. The V3 TUI&#39;s</p>
+<p>default agent got <code>mcp_deja_deja</code> in its tool list and called it too.</p>
+<ul>
+<li><code>kiro-cli --v3 chat</code> TUI, default agent: the first request carried the</li>
+</ul>
+<p>SessionStart digest and the UserPromptSubmit recall from</p>
+<p><code>~/.kiro/hooks/deja.json</code>, and the model quoted both. `--v3 chat</p>
+<p>--no-interactive` ran no hook from that directory at all.</p>
+<ul>
+<li><code>kiro-cli chat --agent deja</code> TUI: the digest reached the model, which</li>
+</ul>
+<p>quoted the earlier session&#39;s rule back before editing.</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

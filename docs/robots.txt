@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vshulcz.github.io/deja-vu/sitemap.xml
+Sitemap: https://vshulcz.github.io/deja-vu/sitemap.txt

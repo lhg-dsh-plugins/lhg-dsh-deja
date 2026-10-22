@@ -1,0 +1,520 @@
+// Command genregistry renders the session-format registry into pages a search
+// engine can read.
+//
+// The registry documents where forty-two coding agents keep their history and
+// what is in those files. That is the one question people put to a search
+// engine in their own words — "where does Claude Code store conversations" —
+// and the answer sat in docs/registry as raw .md, which GitHub Pages serves as
+// text/markdown: no title, no description, not in the sitemap, invisible.
+//
+// Run from the repository root:
+//
+//	go run ./scripts/genregistry
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html"
+	"html/template"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/docsdate"
+)
+
+const site = "https://vshulcz.github.io/deja-vu"
+
+type registry struct {
+	Harnesses []struct {
+		ID           string   `json:"id"`
+		DisplayName  string   `json:"display_name"`
+		StorePaths   []string `json:"store_paths"`
+		FormatKind   string   `json:"format_kind"`
+		LastVerified string   `json:"last_verified"`
+	} `json:"harnesses"`
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	b, err := os.ReadFile(filepath.Join("docs", "registry", "registry.json"))
+	if err != nil {
+		return err
+	}
+	var reg registry
+	if err := json.Unmarshal(b, &reg); err != nil {
+		return err
+	}
+	name := map[string]string{}
+	for _, h := range reg.Harnesses {
+		name[h.ID] = h.DisplayName
+	}
+	// One page is filed under a different name than its registry entry.
+	// Everything else matches, and the check below keeps it that way.
+	name["claude-code"] = name["claude"]
+
+	paths, err := filepath.Glob(filepath.Join("docs", "registry", "*.md"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(paths)
+	// Every page lists every other one. This is the reason the registry is
+	// worth publishing at all: a page per format that answers "where does this
+	// agent keep its history" are each other's best route in, for a reader
+	// and for a crawler that would otherwise reach none of them.
+	var links []link
+	for _, path := range paths {
+		id := strings.TrimSuffix(filepath.Base(path), ".md")
+		if id == "README" {
+			continue
+		}
+		label := name[id]
+		if label == "" {
+			label = id
+		}
+		links = append(links, link{Slug: id, Label: label})
+	}
+	// Case-insensitively: "aider", "opencode" and "pi" are lower-case names,
+	// and a byte sort files them below "Zed", which is not where a reader
+	// looks for them.
+	sort.Slice(links, func(i, j int) bool {
+		return strings.ToLower(links[i].Label) < strings.ToLower(links[j].Label)
+	})
+	var written []string
+	for _, path := range paths {
+		id := strings.TrimSuffix(filepath.Base(path), ".md")
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		body, h1 := renderMarkdown(string(src))
+		if h1 == "" {
+			return fmt.Errorf("%s has no level-one heading, so the page would have no name", path)
+		}
+		// A page whose id is not in the registry would be titled "Where
+		// some-id stores its history", which is not what anyone types and not
+		// what the harness is called. Better to stop than to publish it.
+		if id != "README" && name[id] == "" {
+			return fmt.Errorf("%s has no display_name in registry.json — add the harness there, or the page ships with a raw id in its title", path)
+		}
+		page := pageFor(id, name[id], h1)
+		out := filepath.Join("docs", "registry", id+".html")
+		if err := os.WriteFile(out, []byte(render(page, body, links)), 0o644); err != nil {
+			return err
+		}
+		written = append(written, "registry/"+id+".html")
+	}
+	if err := writeSitemap(written); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %d registry pages and the sitemap\n", len(written))
+	return nil
+}
+
+type meta struct{ Title, Description, Heading, Slug string }
+
+type link struct{ Slug, Label string }
+
+// sidebar is the same shape the guide pages use: .doc is a two-column grid of
+// aside and article, and content placed directly in it becomes grid cells that
+// overlap.
+func sidebar(current string, others []link) string {
+	var b strings.Builder
+	b.WriteString(`<aside><a href="../">&larr; deja-vu</a>`)
+	b.WriteString(`<div class="grp">Guide</div>`)
+	b.WriteString(`<a href="../guide/getting-started.html">Getting started</a>`)
+	b.WriteString(`<a href="../guide/harnesses.html">Harnesses</a>`)
+	b.WriteString(`<div class="grp">Session formats</div>`)
+	b.WriteString(`<a href="README.html"`)
+	if current == "README" {
+		b.WriteString(` aria-current="page"`)
+	}
+	b.WriteString(`>All formats</a>`)
+	for _, o := range others {
+		b.WriteString(`<a href="` + o.Slug + `.html"`)
+		if o.Slug == current {
+			b.WriteString(` aria-current="page"`)
+		}
+		b.WriteString(`>` + html.EscapeString(o.Label) + `</a>`)
+	}
+	b.WriteString(`</aside>`)
+	return b.String()
+}
+
+// pageFor writes the title and description in the words someone would type,
+// not the words the project uses about itself. "Claude Code session format" is
+// what this page is; "where Claude Code stores its history" is what is being
+// looked for, and both belong in the title.
+func pageFor(id, display, h1 string) meta {
+	if display == "" {
+		display = id
+	}
+	if id == "README" {
+		return meta{
+			Title:       "Where coding agents store their history — session format registry",
+			Description: "Where Claude Code, Codex, Cursor, opencode and thirty-eight more coding agents keep their conversation history on disk, what is inside those files, and how each format drifts.",
+			Heading:     h1,
+			Slug:        "README",
+		}
+	}
+	return meta{
+		Title:       fmt.Sprintf("Where %s stores its history — session format", display),
+		Description: fmt.Sprintf("Where %s writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.", display),
+		Heading:     h1,
+		Slug:        id,
+	}
+}
+
+// pageTemplate is rendered by html/template, which escapes per context: an
+// attribute, an element body and the inside of a <script> are three different
+// escapes, and getting that right by hand is how a heading from a markdown
+// file ends up closing the script element on every page the generator writes.
+var pageTemplate = template.Must(template.New("page").Parse(`<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<meta name="description" content="{{.Description}}">
+<link rel="canonical" href="{{.URL}}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{.Title}}">
+<meta property="og:description" content="{{.Description}}">
+<meta property="og:url" content="{{.URL}}">
+<meta property="og:image" content="{{.Site}}/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="{{.Title}}">
+<meta name="twitter:description" content="{{.Description}}">
+<meta name="twitter:image" content="{{.Site}}/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="{{.Site}}/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="{{.Site}}/llms.txt">
+<script type="application/ld+json">{{.Article}}</script>
+<script type="application/ld+json">{{.Crumbs}}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+{{.Sidebar}}
+<article>
+<h1>{{.Heading}}</h1>
+{{.Body}}
+<hr>
+<p>deja reads this format and {{.Others}} others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>
+`))
+
+type pageData struct {
+	Title, Description, Heading, URL, Site string
+	// Others is how many other formats deja reads, spelled out. It was a word
+	// typed into the template, so every one of these twenty pages kept saying
+	// seventeen after three harnesses landed.
+	Others          string
+	Article, Crumbs any
+	Sidebar, Body   template.HTML
+}
+
+// countWord spells a small number the way the pages read it.
+func countWord(n int) string {
+	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven",
+		"eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+		"sixteen", "seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two",
+		"twenty-three", "twenty-four", "twenty-five", "twenty-six", "twenty-seven",
+		"twenty-eight", "twenty-nine", "thirty", "thirty-one", "thirty-two",
+		"thirty-three", "thirty-four", "thirty-five", "thirty-six", "thirty-seven",
+		"thirty-eight", "thirty-nine", "forty"}
+	if n < 0 || n >= len(words) {
+		return fmt.Sprint(n)
+	}
+	return words[n]
+}
+
+func render(m meta, body string, others []link) string {
+	url := site + "/registry/" + m.Slug + ".html"
+	article := map[string]any{
+		"@context": "https://schema.org", "@type": "TechArticle",
+		"headline": m.Heading, "description": m.Description, "url": url,
+		"inLanguage": "en",
+		"author":     map[string]string{"@type": "Person", "name": "vshulcz"},
+		"publisher":  map[string]string{"@type": "Person", "name": "vshulcz"},
+		"isPartOf":   map[string]string{"@type": "WebSite", "name": "deja-vu", "url": site + "/"},
+	}
+	crumbs := map[string]any{
+		"@context": "https://schema.org", "@type": "BreadcrumbList",
+		"itemListElement": []any{
+			map[string]any{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": site + "/"},
+			map[string]any{"@type": "ListItem", "position": 2, "name": "Harnesses", "item": site + "/guide/harnesses.html"},
+			map[string]any{"@type": "ListItem", "position": 3, "name": m.Heading, "item": url},
+		},
+	}
+	var b strings.Builder
+	err := pageTemplate.Execute(&b, pageData{
+		Title: m.Title, Description: m.Description, Heading: m.Heading,
+		URL: url, Site: site, Article: article, Crumbs: crumbs,
+		// Every page but this one. The list is one page per harness format —
+		// README is skipped when it is built — so this is the count the
+		// sentence means.
+		Others: countWord(len(others) - 1),
+		// The body is HTML this generator built from markdown it escaped on
+		// the way through; the sidebar is built from registry names, escaped
+		// there. Both are already safe, which is what template.HTML asserts.
+		Sidebar: template.HTML(sidebar(m.Slug, others)),
+		Body:    template.HTML(body),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return b.String()
+}
+
+// writeSitemap adds the registry pages to the sitemap and brings every entry's
+// lastmod up to the day its file last changed. The loc, changefreq and priority
+// already in the file stay as they stand — those are hand-set.
+//
+// A crawler reads lastmod as the day the page changed and schedules the next
+// fetch from it, so the date has to follow the file rather than the day the
+// entry was written.
+func writeSitemap(registryPages []string) error {
+	path := filepath.Join("docs", "sitemap.xml")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text := string(b)
+	var add strings.Builder
+	for _, p := range registryPages {
+		loc := site + "/" + p
+		if strings.Contains(text, "<loc>"+loc+"</loc>") {
+			continue
+		}
+		// A format page changes when the harness changes its files, which is
+		// rare and unannounced; monthly is what the guide pages use. The date
+		// is filled in below, from the page itself.
+		add.WriteString("  <url><loc>" + loc + "</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>\n")
+	}
+	if add.Len() > 0 {
+		const closing = "</urlset>"
+		i := strings.LastIndex(text, closing)
+		if i < 0 {
+			return fmt.Errorf("docs/sitemap.xml has no %s", closing)
+		}
+		text = text[:i] + add.String() + text[i:]
+	}
+	if err := requireFullHistory(); err != nil {
+		return err
+	}
+	text = dedupe(text)
+	if err := refreshDateModified(); err != nil {
+		return err
+	}
+	text, err = refreshLastmod(text)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		return err
+	}
+	// sitemap.txt is the same list, one URL a line: the second way in when
+	// Search Console reports the XML as unprocessed. Written from the XML so
+	// the two cannot drift.
+	var txt strings.Builder
+	for _, m := range regexp.MustCompile(`<loc>([^<]+)</loc>`).FindAllStringSubmatch(text, -1) {
+		txt.WriteString(m[1] + "\n")
+	}
+	return os.WriteFile(filepath.Join("docs", "sitemap.txt"), []byte(txt.String()), 0o644)
+}
+
+var locRe = regexp.MustCompile(`<loc>` + regexp.QuoteMeta(site) + `/([^<]*)</loc>(?:<lastmod>[^<]*</lastmod>)?`)
+
+// urlRe is one sitemap entry on its own line, the way this file writes them.
+var urlRe = regexp.MustCompile(`(?m)^[ \t]*<url><loc>([^<]*)</loc>.*</url>\n`)
+
+// dedupe keeps the first entry for each URL. Merges that both added the same
+// page left nineteen URLs listed two and three times; a sitemap that lists a
+// page twice is one that disagrees with itself about its priority.
+func dedupe(text string) string {
+	seen := map[string]bool{}
+	return urlRe.ReplaceAllStringFunc(text, func(m string) string {
+		loc := urlRe.FindStringSubmatch(m)[1]
+		if seen[loc] {
+			return ""
+		}
+		seen[loc] = true
+		return m
+	})
+}
+
+// refreshLastmod rewrites each entry's lastmod from the day its page's content
+// last changed. An entry whose file is not there is left alone: the page may
+// be served from somewhere this generator cannot see, and dropping the date is
+// worse than leaving the one a person put in.
+func refreshLastmod(text string) (string, error) {
+	d, err := docsdate.New(".")
+	if err != nil {
+		return text, err
+	}
+	defer func() { _ = d.Close() }()
+	var first error
+	out := locRe.ReplaceAllStringFunc(text, func(m string) string {
+		loc := locRe.FindStringSubmatch(m)[1]
+		day, err := lastChanged(d, sitemapFile(loc))
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			return m
+		}
+		if day == "" {
+			return m
+		}
+		return "<loc>" + site + "/" + loc + "</loc><lastmod>" + day + "</lastmod>"
+	})
+	return out, first
+}
+
+var (
+	publishedRe = regexp.MustCompile(`"datePublished": ?"(\d{4}-\d{2}-\d{2})"`)
+	modifiedRe  = regexp.MustCompile(`"dateModified": ?"\d{4}-\d{2}-\d{2}"`)
+)
+
+// refreshDateModified gives each guide page's structured data the same day
+// the sitemap gives it. The two used to disagree by up to four weeks, because
+// dateModified was typed once and never touched again; it lives in <head>, so
+// writing it does not move the content date it is read from.
+func refreshDateModified() error {
+	d, err := docsdate.New(".")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	for _, glob := range []string{"docs/guide/*.html", "docs/zh/guide/*.html"} {
+		pages, err := filepath.Glob(filepath.FromSlash(glob))
+		if err != nil {
+			return err
+		}
+		for _, page := range pages {
+			b, err := os.ReadFile(page)
+			if err != nil {
+				return err
+			}
+			if !modifiedRe.Match(b) {
+				continue
+			}
+			day, err := lastChanged(d, filepath.ToSlash(page))
+			if err != nil {
+				return err
+			}
+			if m := publishedRe.FindSubmatch(b); m != nil && string(m[1]) > day {
+				day = string(m[1])
+			}
+			out := modifiedRe.ReplaceAll(b, []byte(`"dateModified": "`+day+`"`))
+			if !bytes.Equal(out, b) {
+				if err := os.WriteFile(page, out, 0o644); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// sitemapFile maps a sitemap path to the file docs/ serves for it, with the
+// slashes git wants in a pathspec on every platform. The site root and a
+// directory URL both come from an index.html.
+func sitemapFile(loc string) string {
+	if loc == "" || strings.HasSuffix(loc, "/") {
+		loc += "index.html"
+	}
+	return "docs/" + loc
+}
+
+// lastChanged is the UTC day the file's content last changed (see docsdate):
+// a commit that only rewrote the sidebar does not count, and a file with
+// edits not committed yet is today.
+//
+// UTC, not the author's zone: %as printed the day in the author's own zone,
+// so a commit made at 00:30 in +03:00 dated every page it touched a day ahead
+// of UTC, and the next commit from another zone moved them back (#4906, #4908).
+//
+// A clean, tracked file with no commit behind it means the history is not
+// here. `git log` says so by printing nothing and exiting 0, so this used to
+// leave every date untouched and report success (#3984).
+func lastChanged(d *docsdate.Dater, file string) (string, error) {
+	day, err := d.Day(file)
+	if errors.Is(err, docsdate.ErrNoHistory) {
+		return "", fmt.Errorf("%w: %s", err, shallowHint())
+	}
+	if err != nil {
+		return "", err
+	}
+	return day, nil
+}
+
+// shallowHint says which of the two ways to have no history this is, because
+// the fix differs: deepen the clone, or run the generator inside the
+// repository rather than an export of it.
+func shallowHint() string {
+	if shallow, err := isShallow(); err == nil && shallow {
+		return "the clone is shallow — check out with fetch-depth: 0"
+	}
+	return "the file is tracked and has no commit, which a git archive export looks like"
+}
+
+// requireFullHistory refuses to date a page from a clone that does not have the
+// commits to do it with.
+//
+// A shallow clone does not report this by failing. Git treats the boundary
+// commit as a root, so `git log -1 -- <page>` answers with the boundary's own
+// date for every page that existed before it, and the generator rewrites the
+// whole sitemap to one wrong day and exits 0. Measured on a `--depth 1` clone:
+// 30 of the entries moved, 9 of them to the boundary commit's date (#3984).
+func requireFullHistory() error {
+	shallow, err := isShallow()
+	if err != nil {
+		return err
+	}
+	if shallow {
+		return fmt.Errorf("this clone is shallow, so every page's date would come out as the boundary commit's — check out with fetch-depth: 0")
+	}
+	return nil
+}
+
+func isShallow() (bool, error) {
+	out, err := exec.Command("git", "rev-parse", "--is-shallow-repository").Output()
+	if err != nil {
+		return false, fmt.Errorf("git rev-parse --is-shallow-repository: %w", err)
+	}
+	return strings.TrimSpace(string(out)) == "true", nil
+}

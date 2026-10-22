@@ -1,0 +1,474 @@
+// Command pinmanifests rewrites the scoop, winget and plugin manifests for a
+// release.
+//
+// These files carry a version and the SHA-256 of the two Windows zips, and they
+// used to be updated by hand after each release. That step is invisible when it
+// is skipped: v0.16.0 shipped with the manifests still on 0.15.6, so scoop and
+// winget users were two releases behind and nothing said so.
+//
+//	go run ./scripts/pinmanifests -version 0.16.1 -checksums dist/checksums.txt
+//	go run ./scripts/pinmanifests -check          # fails if they lag the newest release
+//
+// -check is what CI runs. It fetches the newest published release, regenerates
+// the manifests in memory and compares: a pin that was forgotten fails the build
+// with the exact diff instead of going unnoticed until a user reports an old
+// version.
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+)
+
+const (
+	scoopPath   = "packaging/scoop/deja-vu.json"
+	versionPath = "packaging/winget/vshulcz.deja-vu.yaml"
+	localePath  = "packaging/winget/vshulcz.deja-vu.locale.en-US.yaml"
+	installer   = "packaging/winget/vshulcz.deja-vu.installer.yaml"
+	// The Codex plugin is installed from the default branch rather than from a
+	// release asset, so the version committed here is the one a user sees. It
+	// sat at 0.1.0 from July through 0.17.1 because nothing compared it to
+	// anything.
+	codexPlugin = "codex-plugin/.codex-plugin/plugin.json"
+	// Same reasoning for the Claude bundle, which the directory mirrors from
+	// the default branch. It had no version field at all until the directory's
+	// own scanner asked for one.
+	claudePlugin = "claude-plugin/.claude-plugin/plugin.json"
+	// The same plugin in the Agent Plugins v1 layout, which directories such as
+	// awesome-copilot read: plugin.json at the plugin root.
+	claudeAgentPlugin = "claude-plugin/plugin.json"
+	// The CodeBuddy marketplace installs from the default branch too, so the
+	// version committed here is the one its listing shows.
+	codebuddyPlugin = "codebuddy-plugin/.codebuddy-plugin/plugin.json"
+	// The Devin plugin installs from the default branch the same way
+	// (`devin plugins install vshulcz/deja-vu#devin-plugin`), so the version
+	// committed here is the one `devin plugins list` reports.
+	devinPlugin = "devin-plugin/.devin-plugin/plugin.json"
+	// The Gemini gallery crawls the manifest at the repository root and shows
+	// its version, and `gemini extensions install` reads the same file.
+	geminiExtension = "gemini-extension.json"
+	// The Agent Plugins manifest at the root: cursor.directory reads it
+	// straight from the default branch, so its version is the one a
+	// listing shows.
+	agentPlugin = "plugin.json"
+	// The MCP registry entry. `mcp-registry.yml` stamps the release version
+	// into this file inside its own checkout at publish time and never commits
+	// it back, so the committed value drifts on its own: it sat at 0.13.0
+	// through eight minors while the registry served the right one. Pinned
+	// here so the file in the repository reads like the entry it produces.
+	serverJSON = "server.json"
+
+	// The Kimi Code plugin is packed into the release archive, so the version
+	// in its manifest is the one a Kimi user reads. It sat at 0.1.0 from the
+	// day it was added — the same way the Codex plugin did, and for the same
+	// reason: the workflow that validates its shape never compares its version
+	// to anything.
+	kimiPlugin = "kimi.plugin.json"
+	// Packed under extensions/, and a test pins the two to agree.
+	kimiPacked = "extensions/kimi/kimi.plugin.json"
+	// doctor compares the installed copy against this constant to tell a
+	// user their zip install is behind, so it has to move with the manifest.
+	kimiConst = "cmd/deja/kimi_plugin.go"
+	// The Spec Kit extension is packed into deja-spec-kit.zip after this pin
+	// runs, and its catalog entry names the version inside the zip, so the
+	// two have to be the release's.
+	specKitExtension = "extensions/spec-kit/extension.yml"
+	releaseAPI       = "https://api.github.com/repos/vshulcz/deja-vu/releases/latest"
+	assetBase        = "https://github.com/vshulcz/deja-vu/releases/download"
+)
+
+// npmHarnessPackages are the plugins published to npm that install the deja
+// binary package as a dependency. Their own version is set at publish time;
+// what is pinned here is which deja they ask for.
+var npmHarnessPackages = []string{"dsh", "opencode", "openclaw", "pi"}
+
+type pins struct {
+	version string
+	amd64   string
+	arm64   string
+}
+
+func main() {
+	version := flag.String("version", "", "release version without the leading v")
+	checksums := flag.String("checksums", "", "path to the release checksums.txt")
+	check := flag.Bool("check", false, "verify the committed manifests match the newest release")
+	root := flag.String("root", ".", "repository root")
+	flag.Parse()
+
+	if *check {
+		if err := runCheck(*root); err != nil {
+			fmt.Fprintln(os.Stderr, "pinmanifests:", err)
+			os.Exit(1)
+		}
+		fmt.Println("scoop, winget and the plugin manifests match the newest release")
+		return
+	}
+
+	if *version == "" || *checksums == "" {
+		fmt.Fprintln(os.Stderr, "pinmanifests: -version and -checksums are required")
+		os.Exit(1)
+	}
+	b, err := os.ReadFile(*checksums)
+	if err != nil {
+		fail(err)
+	}
+	p, err := parse(*version, string(b))
+	if err != nil {
+		fail(err)
+	}
+	if err := write(*root, p); err != nil {
+		fail(err)
+	}
+	fmt.Printf("pinned scoop, winget and the plugin manifests to %s\n", p.version)
+}
+
+// parse pulls the two Windows hashes out of a checksums file. Both must be
+// present: a manifest with one stale hash installs a mismatched binary for half
+// the users and passes every check we have.
+func parse(version, checksums string) (pins, error) {
+	p := pins{version: version}
+	s := bufio.NewScanner(strings.NewReader(checksums))
+	for s.Scan() {
+		fields := strings.Fields(s.Text())
+		if len(fields) != 2 {
+			continue
+		}
+		sum, name := fields[0], filepath.Base(fields[1])
+		switch name {
+		case fmt.Sprintf("deja-vu_%s_windows_amd64.zip", version):
+			p.amd64 = sum
+		case fmt.Sprintf("deja-vu_%s_windows_arm64.zip", version):
+			p.arm64 = sum
+		}
+	}
+	if err := s.Err(); err != nil {
+		return p, err
+	}
+	if p.amd64 == "" || p.arm64 == "" {
+		return p, fmt.Errorf("checksums for %s are missing a windows zip (amd64=%q arm64=%q)", version, p.amd64, p.arm64)
+	}
+	return p, nil
+}
+
+// targets is the whole pinned set, in one place. The writer and the check used
+// to carry their own copy of this list, so a target added to one and not the
+// other was pinned at release time and never verified again — or verified and
+// never written.
+func targets() map[string]func(pins) ([]byte, error) {
+	t := map[string]func(pins) ([]byte, error){
+		scoopPath:         renderScoop,
+		versionPath:       renderVersion,
+		localePath:        renderLocale,
+		installer:         renderInstaller,
+		codexPlugin:       renderPluginVersion(codexPlugin),
+		claudePlugin:      renderPluginVersion(claudePlugin),
+		claudeAgentPlugin: renderPluginVersion(claudeAgentPlugin),
+		codebuddyPlugin:   renderPluginVersion(codebuddyPlugin),
+		devinPlugin:       renderPluginVersion(devinPlugin),
+		geminiExtension:   renderPluginVersion(geminiExtension),
+		kimiPlugin:        renderPluginVersion(kimiPlugin),
+		kimiPacked:        renderPluginVersion(kimiPacked),
+		kimiConst:         renderGoVersionConst(kimiConst, "kimiPluginVersion"),
+		agentPlugin:       renderPluginVersion(agentPlugin),
+		serverJSON:        renderPluginVersion(serverJSON),
+		specKitExtension:  renderYAMLExtensionVersion(specKitExtension),
+	}
+	// The harness packages depend on the deja binary package. The pin is a
+	// caret on a 0.x version, which npm reads as "this minor and no further",
+	// so a plugin left behind installs a binary from an older release for the
+	// one user who has no deja on PATH — the user who installed the plugin to
+	// get one (#2993).
+	for _, dir := range npmHarnessPackages {
+		path := filepath.Join("extensions", dir, "package.json")
+		t[path] = renderNpmDejaDep(path)
+	}
+	// The root manifest mirrors the dsh plugin — DSH installs a plugin from a
+	// repository root — and a test pins the two to agree, so it carries the
+	// same dependency and moves with it.
+	t["package.json"] = renderNpmDejaDep("package.json")
+	return t
+}
+
+func write(root string, p pins) error {
+	for path, render := range targets() {
+		body, err := render(p)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(root, path), body, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scoopManifest is a struct rather than a map because Scoop's own bucket
+// tooling formats manifests in this key order, and a map marshals alphabetical.
+// A submission that arrives sorted differently comes back from their formatter
+// as a diff on every line.
+type scoopManifest struct {
+	Version      string               `json:"version"`
+	Description  string               `json:"description"`
+	Homepage     string               `json:"homepage"`
+	License      string               `json:"license"`
+	Architecture map[string]scoopArch `json:"architecture"`
+	Bin          string               `json:"bin"`
+	Checkver     string               `json:"checkver"`
+	Autoupdate   scoopAutoupdate      `json:"autoupdate"`
+}
+
+type scoopArch struct {
+	URL  string `json:"url"`
+	Hash string `json:"hash,omitempty"`
+}
+
+type scoopAutoupdate struct {
+	Architecture map[string]scoopArch `json:"architecture"`
+	// Without this the updater can raise the version but has nothing to put in
+	// the hash fields. goreleaser publishes checksums.txt beside the archives,
+	// which is $baseurl here, and that is the shape the bucket's own manifests
+	// use.
+	Hash map[string]string `json:"hash"`
+}
+
+func renderScoop(p pins) ([]byte, error) {
+	m := scoopManifest{
+		Version:     p.version,
+		Description: "Search Claude Code, Codex and Cursor session history locally",
+		Homepage:    "https://vshulcz.github.io/deja-vu/",
+		License:     "MIT",
+		Architecture: map[string]scoopArch{
+			"64bit": {
+				URL:  fmt.Sprintf("%s/v%s/deja-vu_%s_windows_amd64.zip", assetBase, p.version, p.version),
+				Hash: p.amd64,
+			},
+			"arm64": {
+				URL:  fmt.Sprintf("%s/v%s/deja-vu_%s_windows_arm64.zip", assetBase, p.version, p.version),
+				Hash: p.arm64,
+			},
+		},
+		Bin:      "deja.exe",
+		Checkver: "github",
+		Autoupdate: scoopAutoupdate{
+			Architecture: map[string]scoopArch{
+				"64bit": {URL: assetBase + "/v$version/deja-vu_$version_windows_amd64.zip"},
+				"arm64": {URL: assetBase + "/v$version/deja-vu_$version_windows_arm64.zip"},
+			},
+			Hash: map[string]string{"url": "$baseurl/checksums.txt"},
+		},
+	}
+	b, err := json.MarshalIndent(m, "", "    ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+// The winget files are edited rather than regenerated: they carry tags and
+// descriptions that are not derived from a release, and rewriting them from a
+// template here would quietly drop whatever someone adds later.
+// renderVersion covers the winget version manifest, which carries its own
+// PackageVersion. Leaving it out pinned two of the three winget files and the
+// set failed its own consistency test — caught after 0.16.2 shipped, having
+// been fixed by hand before that.
+func renderVersion(p pins) ([]byte, error) { return edit(versionPath, p) }
+
+func renderLocale(p pins) ([]byte, error) { return edit(localePath, p) }
+
+func renderInstaller(p pins) ([]byte, error) { return edit(installer, p) }
+
+// renderPluginVersion rewrites only the version field. These manifests carry
+// descriptions, prompts and pointers that no release derives, so regenerating
+// them from a template here would drop whatever someone adds later — the same
+// reason the winget files are edited rather than rendered.
+// renderGoVersionConst pins a Go constant that mirrors a manifest's version.
+// Without it the constant and the manifest drift, and the drift is exactly
+// what the constant exists to report.
+func renderGoVersionConst(path, name string) func(pins) ([]byte, error) {
+	re := regexp.MustCompile(`(const ` + name + ` = )"[^"]*"`)
+	return func(p pins) ([]byte, error) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if !re.MatchString(string(b)) {
+			return nil, fmt.Errorf("%s has no %s to pin", path, name)
+		}
+		return []byte(re.ReplaceAllString(string(b), `${1}"`+p.version+`"`)), nil
+	}
+}
+
+// renderNpmDejaDep pins a harness package's dependency on the deja binary
+// package. Only that one line: these manifests carry keywords, engines and a
+// description no release derives.
+func renderNpmDejaDep(path string) func(pins) ([]byte, error) {
+	re := regexp.MustCompile(`("@vshulcz/deja-vu":\s*)"[^"]*"`)
+	return func(p pins) ([]byte, error) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if !re.Match(b) {
+			return nil, fmt.Errorf("%s does not depend on @vshulcz/deja-vu", path)
+		}
+		return re.ReplaceAll(b, []byte(`${1}"^`+p.version+`"`)), nil
+	}
+}
+
+// renderYAMLExtensionVersion pins the `version:` under `extension:` in a Spec
+// Kit manifest and nothing else: `requires.tools` carries a version range for
+// deja itself that only moves when the command needs a newer deja.
+func renderYAMLExtensionVersion(path string) func(pins) ([]byte, error) {
+	return func(p pins) ([]byte, error) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if n := len(yamlExtensionVersion.FindAllIndex(b, -1)); n != 1 {
+			return nil, fmt.Errorf("%s has %d extension version lines, want 1", path, n)
+		}
+		return yamlExtensionVersion.ReplaceAll(b, []byte(`${1}"`+p.version+`"`)), nil
+	}
+}
+
+func renderPluginVersion(path string) func(pins) ([]byte, error) {
+	return func(p pins) ([]byte, error) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if !jsonVersion.MatchString(string(b)) {
+			return nil, fmt.Errorf("%s has no version field to pin", path)
+		}
+		return []byte(jsonVersion.ReplaceAllString(string(b), `${1}"`+p.version+`"`)), nil
+	}
+}
+
+var (
+	versionLine = regexp.MustCompile(`(?m)^PackageVersion: .*$`)
+	// (?m) because a tag reference is often the last thing on its line: the
+	// ReleaseNotesUrl in the winget locale sat at v0.16.1 through three
+	// releases while every reference followed by a slash moved (#2088).
+	tagRefs     = regexp.MustCompile(`(?m)/v\d+\.\d+\.\d+(/|$)`)
+	fileRefs    = regexp.MustCompile(`deja-vu_\d+\.\d+\.\d+_windows`)
+	jsonVersion = regexp.MustCompile(`(?m)^(\s*"version":\s*)"[^"]*"`)
+	// Two-space indent: the extension block's own field, not a tool's
+	// `version:` under requires, which sits deeper.
+	yamlExtensionVersion = regexp.MustCompile(`(?m)^(  version:[ \t]*)"[^"\n]*"`)
+	amdSha               = regexp.MustCompile(`(?m)^(\s*InstallerSha256: )[0-9A-Fa-f]{64}(\s*)$`)
+)
+
+func edit(path string, p pins) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	s := string(b)
+	s = versionLine.ReplaceAllString(s, "PackageVersion: "+p.version)
+	s = tagRefs.ReplaceAllString(s, "/v"+p.version+"$1")
+	s = fileRefs.ReplaceAllString(s, "deja-vu_"+p.version+"_windows")
+
+	// Two hashes in file order: amd64 first, then arm64, matching the
+	// Installers list. Anything else means the file was reordered and the
+	// rewrite would put the wrong hash against an architecture.
+	want := []string{strings.ToUpper(p.amd64), strings.ToUpper(p.arm64)}
+	i := 0
+	var bad error
+	s = amdSha.ReplaceAllStringFunc(s, func(m string) string {
+		if i >= len(want) {
+			bad = fmt.Errorf("%s has more InstallerSha256 lines than architectures", path)
+			return m
+		}
+		sub := amdSha.FindStringSubmatch(m)
+		out := sub[1] + want[i] + sub[2]
+		i++
+		return out
+	})
+	if bad != nil {
+		return nil, bad
+	}
+	if i != 0 && i != len(want) {
+		return nil, fmt.Errorf("%s has %d InstallerSha256 lines, want %d", path, i, len(want))
+	}
+	return []byte(s), nil
+}
+
+func runCheck(root string) error {
+	version, err := latestRelease()
+	if err != nil {
+		return err
+	}
+	sums, err := fetch(fmt.Sprintf("%s/v%s/checksums.txt", assetBase, version))
+	if err != nil {
+		return err
+	}
+	p, err := parse(version, string(sums))
+	if err != nil {
+		return err
+	}
+	for path, render := range targets() {
+		want, err := render(p)
+		if err != nil {
+			return err
+		}
+		got, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			return err
+		}
+		if string(got) != string(want) {
+			return fmt.Errorf("%s is not pinned to %s — run: go run ./scripts/pinmanifests -version %s -checksums <checksums.txt>", path, version, version)
+		}
+	}
+	return nil
+}
+
+func latestRelease() (string, error) {
+	b, err := fetch(releaseAPI)
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return "", err
+	}
+	if r.TagName == "" {
+		return "", fmt.Errorf("no tag_name in the latest release")
+	}
+	return strings.TrimPrefix(r.TagName, "v"), nil
+}
+
+func fetch(url string) ([]byte, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" && strings.HasPrefix(url, "https://api.github.com") {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
+	}
+	return io.ReadAll(resp.Body)
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, "pinmanifests:", err)
+	os.Exit(1)
+}

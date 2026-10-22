@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory plugins for Claude Code, Codex and Cursor, compared</title>
+<meta name="description" content="deja-vu next to claude-mem, agentmemory, MemPalace, Mem0, Letta, CASS, ctx and agentsview: what each captures, where it keeps it, how it scores.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/compare.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Memory plugins for Claude Code, Codex and Cursor, compared">
+<meta property="og:description" content="deja-vu next to claude-mem, agentmemory, MemPalace, Mem0, Letta, CASS, ctx and agentsview: what each captures, where it keeps it, how it scores.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/compare.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="Memory plugins for Claude Code, Codex and Cursor, compared">
+<meta name="twitter:description" content="deja-vu next to claude-mem, agentmemory, MemPalace, Mem0, Letta, CASS, ctx and agentsview: what each captures, where it keeps it, how it scores.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Memory plugins for Claude Code, Codex and Cursor, compared", "description": "deja-vu next to claude-mem, agentmemory, MemPalace, Mem0, Letta, CASS, ctx and agentsview: what each captures, where it keeps it, how it scores.", "url": "https://vshulcz.github.io/deja-vu/guide/compare.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/compare.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-07-23", "dateModified": "2026-10-15"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"Compare","item":"https://vshulcz.github.io/deja-vu/guide/compare.html"}]}</script>
+<style>
+/* Full-width page: the matrix needs every pixel, so the sidebar folds into a top strip. */
+/* The table takes the width the contents column would have had. Dropping the
+   sidebar was the old answer and it cost the reader their place in the guide;
+   dropping the three-item contents list on this one page costs nothing.
+
+   Removing the article's max-width alone was not enough — the grid still held
+   the middle column, so four of the seven columns stayed off-screen. */
+@media(min-width:861px){
+.doc{grid-template-columns:224px minmax(0,1fr)}
+.doc .toc{display:none}
+.doc article{max-width:none}
+}
+.cmpwrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--line);border-radius:10px}
+.cmpwrap table{table-layout:fixed;border-collapse:collapse;margin:0;
+  font:12.5px var(--mono);min-width:1040px;width:100%}
+.cmpwrap th,.cmpwrap td{padding:11px 13px;vertical-align:top;overflow-wrap:break-word;
+  border:1px solid var(--line);line-height:1.5}
+.cmpwrap td:first-child,.cmpwrap th:first-child{position:sticky;left:0;z-index:1;
+  background:var(--bg);width:142px;color:var(--faint);font-size:10.5px;
+  text-transform:uppercase;letter-spacing:.1em}
+.cmpwrap thead th{position:sticky;top:0;z-index:2;background:var(--panel);
+  color:var(--faint);text-transform:uppercase;font-size:10.5px;letter-spacing:.12em}
+/* the subject of the page, marked as the subject */
+.cmpwrap th.us,.cmpwrap td.us{background:rgba(135,135,175,.13);color:var(--ink)}
+.cmpwrap thead th.us{color:var(--ph-hi);box-shadow:inset 0 2px 0 var(--amber)}
+.cmpwrap tbody tr:hover td{background:rgba(255,255,255,.02)}
+.cmpwrap tbody tr:hover td.us{background:rgba(135,135,175,.18)}
+.cmpwrap .y{color:var(--ph-hi)}
+.cmpwrap .n{color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold"><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html" aria-current="page">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>Memory plugins for coding agents, compared</h1>
+<p class="pagelede">where deja sits among the memory tools<span class="mins" data-mins></span></p>
+<p>There are a lot of AI memory systems. Most solve a different problem than deja: they give <em>applications</em> a memory API you call from code, or wrap an agent runtime around their own store. deja is narrower — it makes the transcripts your coding agents <em>already write to disk</em> searchable, and serves them back to those agents. That one difference (retroactive indexing vs forward capture) drives most of the table below.</p>
+
+<div class="cmpwrap">
+<table>
+<tr><th></th><th class="us">deja-vu</th><th><a href="https://github.com/mem0ai/mem0" rel="noopener">Mem0</a></th><th><a href="https://github.com/letta-ai/letta" rel="noopener">Letta</a></th><th><a href="https://github.com/NevaMind-AI/memU" rel="noopener">memU</a></th><th><a href="https://github.com/MemoriLabs/Memori" rel="noopener">Memori</a></th><th><a href="https://github.com/thedotmack/claude-mem" rel="noopener">claude-mem</a></th><th><a href="https://github.com/rohitg00/agentmemory" rel="noopener">agentmemory</a></th></tr>
+<tr><td>What it is</td><td class="us">index over agent transcripts</td><td>memory API for apps</td><td>agent runtime (this repo now points at letta-code)</td><td>memory filesystem</td><td>SQL memory SDK</td><td>Claude Code plugin</td><td>capture daemon</td></tr>
+<tr><td>Starts with your history</td><td class="us y">✓ retroactive</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓ imports Claude Code JSONL</td></tr>
+<tr><td>Capture step</td><td class="us">none needed</td><td>API calls</td><td>its runtime</td><td>agent distills</td><td>SDK wrap</td><td>hooks + LLM</td><td>hooks</td></tr>
+<tr><td>Stored as</td><td class="us">verbatim, redacted</td><td>LLM facts</td><td>memory blocks</td><td>markdown</td><td>SQL rows</td><td>LLM summaries</td><td>events + vectors</td></tr>
+<tr><td>Needs LLM/embedding key</td><td class="us y">no</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>model or API</td></tr>
+<tr><td>Background process</td><td class="us y">none</td><td>server / cloud</td><td>server</td><td>server / cloud</td><td>cloud by default, your own database opt-in</td><td>worker</td><td>daemon, ports</td></tr>
+<tr><td>Coding agents</td><td class="us">42 native parsers (Claude Code, Codex, opencode, Cursor, Goose, OpenClaw…)</td><td>via SDK/MCP</td><td>own runtime</td><td>adapters</td><td>MCP: Claude Code, Cursor, Codex, Warp, Antigravity</td><td>Claude Code, Codex, Cursor, opencode, Windsurf, Antigravity, Grok Bot, OpenClaw</td><td>via hooks</td></tr>
+<tr><td>Cross-machine sync</td><td class="us y">✓ SSH, no cloud</td><td>cloud</td><td>server-side</td><td>cloud / self-host</td><td>cloud, or your own database</td><td>cloud (cmem.ai)</td><td>peer-to-peer mesh</td></tr>
+<tr><td>Recall provenance</td><td class="us y">✓ log + receipts</td><td class="n">—</td><td>partial</td><td class="n">—</td><td>queryable rows</td><td>viewer</td><td>dashboard</td></tr>
+<tr><td>Retrieval</td><td class="us">tiered lexical, optional embeddings</td><td>vector + graph</td><td>agent + vector</td><td>embeddings</td><td>SQL + vector</td><td>vector</td><td>hybrid RRF</td></tr>
+<tr><td>Benchmark, harness in repo</td><td class="us">88.1% hit@1 LME-S (470q cleaned) · <a href="benchmarks.html">measured</a> · <a href="day-zero.html">day zero vs seven tools</a></td><td>self-reported</td><td>research lineage</td><td class="n">—</td><td>self-reported</td><td class="n">—</td><td>LME-S 95.2% R@5, harness in repo</td></tr>
+<tr><td>Install</td><td class="us">one binary</td><td>pip + keys</td><td>npm</td><td>pip / server</td><td>npm or pip, plus keys</td><td>npx, or Claude&rsquo;s plugin install</td><td>npx</td></tr>
+<tr><td>License</td><td class="us">MIT</td><td>Apache-2.0</td><td>Apache-2.0</td><td>Apache-2.0</td><td>Apache-2.0</td><td>Apache-2.0</td><td>Apache-2.0</td></tr>
+</table>
+</div>
+
+<div class="note">Benchmark rows are not directly comparable across systems: most projects publish end-to-end QA accuracy (an answering LLM on top of retrieval), deja publishes retrieval-only numbers with the harness in-repo so you can rerun them. Competitor cells reflect their public READMEs, re-read on September 24, 2026 — corrections welcome, <a href="https://github.com/vshulcz/deja-vu/issues">open an issue</a>.</div>
+
+
+<h2>The wider field</h2>
+<p>The table above is the six systems people ask us about, which are mostly a different shape of tool. Asked for a broader atlas (<a href="https://github.com/vshulcz/deja-vu/issues/310">#310</a>), here are six memory projects outside that set, on the same axes: the four largest, plus the two a reader is most often pointed at when they ask for a local memory layer. Cells are from each project&rsquo;s own README, re-read on September 25, 2026, and so are the star counts.</p>
+
+<div class="cmpwrap">
+<table>
+<tr><th></th><th class="us">deja-vu</th><th><a href="https://github.com/MemPalace/mempalace" rel="noopener">MemPalace</a></th><th><a href="https://github.com/topoteretes/cognee" rel="noopener">cognee</a></th><th><a href="https://github.com/getzep/graphiti" rel="noopener">Graphiti / Zep</a></th><th><a href="https://github.com/vectorize-io/hindsight" rel="noopener">Hindsight</a></th><th><a href="https://github.com/akitaonrails/ai-memory" rel="noopener">ai-memory</a></th><th><a href="https://github.com/basicmachines-co/basic-memory" rel="noopener">basic-memory</a></th></tr>
+<tr><td>What it is</td><td class="us">index over agent transcripts</td><td>local-first memory store</td><td>knowledge-graph memory platform</td><td>temporal knowledge graph</td><td>memory service with typed pathways</td><td>memory server for coding agents</td><td>MCP server over a markdown knowledge base</td></tr>
+<tr><td>Stars</td><td class="us">see repo</td><td>59.3k</td><td>31.0k</td><td>31.1k</td><td>27.1k</td><td>8.3k</td><td>4.0k</td></tr>
+<tr><td>Starts with your history</td><td class="us y">✓ retroactive, 42 harnesses</td><td class="y">✓ mines Claude Code, Codex, Cursor</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td>&mdash; hooks capture forward; the importer takes markdown wikis</td><td>partial &mdash; <code>import claude conversations</code> and <code>import chatgpt</code>, from exports</td></tr>
+<tr><td>Capture step</td><td class="us">none needed</td><td>hooks, plus a mine/sweep backfill</td><td>API calls</td><td>API (episodes)</td><td>API (<code>retain</code>)</td><td>lifecycle hooks, silent</td><td>the agent writes notes</td></tr>
+<tr><td>Stored as</td><td class="us">verbatim, redacted</td><td>verbatim, in rooms and drawers</td><td>graph entities + embeddings</td><td>entities and edges with validity windows</td><td>typed facts + sparse/dense vectors</td><td>markdown pages in a git wiki, derived index</td><td>markdown notes with wikilinks, SQLite index</td></tr>
+<tr><td>Needs LLM/embedding key</td><td class="us y">no</td><td class="y">no — ships a local model (~300&nbsp;MB)</td><td>yes</td><td>yes</td><td>yes</td><td>no &mdash; zero-LLM default, local embeddings opt-in</td><td>no &mdash; local FastEmbed model; reranking downloads a second one</td></tr>
+<tr><td>Background process</td><td class="us y">none</td><td>none; a vector store backend (ChromaDB by default)</td><td>Postgres + pgvector, or Neo4j</td><td>Neo4j, FalkorDB or Neptune</td><td>Docker service, or embedded</td><td>a server you run (Docker or a wrapper script)</td><td>a sync process; hosted tier optional</td></tr>
+<tr><td>Retrieval</td><td class="us">tiered lexical, optional embeddings</td><td>semantic, optional keyword and recency boosts, optional LLM rerank</td><td>graph + vector, strategy picked for you</td><td>embeddings + BM25 + graph traversal</td><td>hybrid sparse/dense over memory banks</td><td>full-text, optional local embeddings</td><td>full-text + vector, optional cross-encoder rerank</td></tr>
+<tr><td>Published retrieval numbers</td><td class="us">88.1% hit@1 / 97.4% hit@5 LME-S on the 470-question cleaned set, 87.4% / 97.2% on all 500, LoCoMo 70.5% hit@1 / 95.6% R@10, <a href="benchmarks.html">harness in repo</a></td><td><a href="https://github.com/MemPalace/mempalace/blob/main/README.md#benchmarks" rel="noopener">96.6% R@5 LongMemEval (500q, no LLM); 88.9% R@10 LoCoMo</a></td><td>0.79 on BEAM at 100k tokens; <a href="#cognee-measured">LME-S measured below</a></td><td>none in README; a Zep paper reports separately</td><td><a href="https://benchmarks.hindsight.vectorize.io/" rel="noopener">a LongMemEval leaderboard and an arXiv paper</a>, end-to-end rather than retrieval-only</td><td>LongMemEval-S hit@5 0.666 zero-LLM, 0.815 with local embeddings, harness in repo</td><td>none in the README</td></tr>
+<tr><td>Install</td><td class="us">one binary</td><td><code>uv tool install</code></td><td><code>uv pip install</code> + a database</td><td>pip + a graph database</td><td>docker</td><td>Docker image, or the install script</td><td><code>uv tool install basic-memory</code></td></tr>
+<tr><td>License</td><td class="us">MIT</td><td>MIT</td><td>Apache-2.0</td><td>Apache-2.0</td><td>MIT</td><td>MIT</td><td>AGPL-3.0</td></tr>
+</table>
+</div>
+
+<div class="note">On that benchmark row: MemPalace publishes <b>96.6% R@5</b> on LongMemEval (500 questions, semantic search, no LLM) and <b>88.9% R@10</b> on LoCoMo. Our harness scores 97.2% hit@5 and 98.6% hit@10 on the same 500 questions, and 95.6% R@10 on LoCoMo. The metrics are defined slightly differently and neither of us has rerun the other's harness, so read those as close rather than settled. What we can say about ours is that it is in this repo and you can run it.</div>
+
+<h3 id="cognee-measured">cognee on LongMemEval-S, measured</h3>
+<p>cognee's README cites BEAM, not a LongMemEval retrieval number, so we ran it on 15 October 2026: the first 20 non-abstention questions of LongMemEval-S cleaned, scored by the same <code>-score</code> path as our <a href="benchmarks.html">harness</a>. All twenty are single-session-user, the easiest question type. cognee 1.6.4 ran on an Apple M4 with every model served by Ollama, in chunks mode: its own chunker and <code>nomic-embed-text</code> embeddings, with the graph-extraction task removed.</p>
+<table>
+<tr><th></th><th>cognee 1.6.4, chunks</th><th>deja-vu</th></tr>
+<tr><td>hit@1</td><td>65%</td><td>90%</td></tr>
+<tr><td>hit@5</td><td>75%</td><td>95%</td></tr>
+<tr><td>MRR</td><td>0.699</td><td>0.925</td></tr>
+<tr><td>Ingest, one 50-session haystack</td><td>~15 s</td><td>~0.27 s</td></tr>
+<tr><td>Query, median</td><td>52 ms</td><td>6 ms</td></tr>
+</table>
+<p>The default <code>cognify</code>, the one that builds the graph, is not scored. With <code>llama3.1:8b</code> on the same machine, one haystack is 137 chunks and about 274 LLM calls, ~430k input and 77k output tokens by cognee's own dry-run estimate; at the call rates we saw that is three to six hours per question. On a three-session probe that did finish, the graph held topic entities (a flu shot, a budgeting app, a river-crossing puzzle) joined by generic relations. The fact the question asked for, the user's degree, was neither an entity nor an edge; the hit came from chunk text and summaries, and no edge linked one session to another.</p>
+<div class="note">An 8B local model extracts worse than the GPT-class model cognee uses by default, so read the graph finding as a lower bound for cognee, not its ceiling. This is n=20 of one question type, and we maintain deja. The drivers and the 20 question ids are in <a href="https://github.com/vshulcz/deja-vu/tree/main/scripts/lmecompare">scripts/lmecompare</a>; if a setting we missed changes the result, <a href="https://github.com/vshulcz/deja-vu/issues">open an issue</a> and we will re-run it.</div>
+
+<h2>The other tools that read the same files</h2>
+<p>A second group is closer to deja than any memory system: tools that also read the session files coding agents leave on disk. They are built for a person doing the looking — a window or a terminal you open when you want to find something. Cells are from each project's own README, re-read on 24 September 2026. The agentsview column replaces its archived predecessor agent-session-viewer; two of its cells — the MCP server and the output masking — are now documented outside the README, in <code>docs/</code> and in the source, and are marked from there.</p>
+
+<div class="cmpwrap">
+<table>
+<tr><th></th><th class="us">deja-vu</th><th><a href="https://github.com/Dicklesworthstone/coding_agent_session_search" rel="noopener">cass</a></th><th><a href="https://github.com/jazzyalex/agent-sessions" rel="noopener">Agent Sessions</a></th><th><a href="https://github.com/adlternative/agent-historian" rel="noopener">agent-historian</a></th><th><a href="https://github.com/Dicklesworthstone/cross_agent_session_resumer" rel="noopener">casr</a></th><th><a href="https://github.com/kenn-io/agentsview" rel="noopener">agentsview</a></th></tr>
+<tr><td>What it is</td><td class="us">index the agent queries</td><td>TUI and CLI over one timeline</td><td>macOS app</td><td>CLI for agents</td><td>session converter</td><td>local archive with a web UI</td></tr>
+<tr><td>Agents read</td><td class="us">42</td><td>26 in its pipeline, 32 connectors</td><td>16 CLIs</td><td>5 CLIs</td><td>Claude, Codex, Gemini and more</td><td>64 in its table</td></tr>
+<tr><td>Recall without being asked</td><td class="us y">✓ hooks at session start, before an edit, after a failure</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+<tr><td>Serves an agent</td><td class="us y">✓ MCP + skill</td><td class="y">✓ MCP</td><td class="n">—</td><td class="y">✓ CLI and a skill, MCP dropped on purpose</td><td class="n">—</td><td class="y">✓ MCP, read-only</td></tr>
+<tr><td>Secrets stripped at index time</td><td class="us y">✓</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">— masked on output, <code>--reveal</code> shows them</td></tr>
+<tr><td>Cross-machine sync</td><td class="us y">✓ SSH, no cloud</td><td class="y">✓ SSH and rsync, with provenance</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓ a copied directory, PostgreSQL, DuckDB, ClickHouse</td></tr>
+<tr><td>Also does</td><td class="us"><code>blame</code>, <code>fix</code>, <code>how</code>, digests</td><td>timeline browsing</td><td>live quota burn per session, priced per model</td><td>project or global scope</td><td>resume a Codex session inside Claude Code</td><td>token-cost and activity dashboards, semantic search through an embeddings endpoint</td></tr>
+<tr><td>Written in</td><td class="us">Go, one binary</td><td>Rust</td><td>Swift, macOS only</td><td>TypeScript</td><td>Rust</td><td>Go</td></tr>
+</table>
+</div>
+
+<p>One more belongs here since September 2026: Hugging Face's <a href="https://github.com/huggingface/funes">funes</a> reads existing transcripts of Claude Code, Codex, pi and Hermes into a local vector index with a reranker, and serves an agent over MCP and per-turn hooks — the closest thing to deja's shape. Measured on the <a href="day-zero.html">day-zero corpus</a>: 31 minutes to index what deja indexes in under twenty seconds, 8.6 s a query against 97 ms, and it does not rank ahead of deja at any depth, even with its recency weighting off (17 against 36 at rank five). Four harnesses against forty-two, and nothing arrives at a failed command or a file about to be edited. <a href="https://ctx.rs">ctx</a> is the nearest sibling in shape — a Rust lexical index over thirty-nine providers' files, with MCP and a blame of its own — and on the same corpus it finds a little over a third of deja's sessions at rank one and rank five and about half at fifty (hit@1 7, found@50 34) at 1.0 s a query; its automatic setup indexes none of the directory and needs an explicit import, on 1.4.12 and again on 1.6.3.</p>
+
+<div class="note">The row that matters is the third one. Every tool here can find the session you are thinking of; deja is the one where nobody has to be thinking of it — the hook fires at session start and before an edit, so the earlier decision arrives whether or not anyone remembered to look. That is a different job from browsing, and on browsing several of these are better than we are.</div>
+
+<h2>When to pick something else</h2>
+<p>Honest routing, because the categories genuinely differ:</p>
+<p><b>Mem0 / Memori</b> — you are building an application and want to give <em>your users</em> memory through an API. deja has no SDK; it is not for app-embedded memory.</p>
+<p><b>Letta</b> — you want a full agent runtime with self-editing memory and you're happy living inside it. deja is the opposite bet: memory only, bring whatever agent you already use.</p>
+<p><b>memU</b> — you want curated, distilled knowledge files and don't mind the agent doing the distilling. deja keeps the verbatim record and searches it instead.</p>
+<p><b>claude-mem</b> — you prefer compressed summaries over raw history. It installs into Claude Code, Codex, Cursor, opencode, Windsurf, Antigravity, Grok Bot and OpenClaw gateways; deja parses 42 agents and keeps recall lossless. <a href="claude-mem-alternative.html">The two side by side</a>.</p>
+<p><b>agentmemory</b> — it publishes 95.2% R@5 on LongMemEval-S with the harness in its own repository, imports the Claude Code transcripts you already have, and syncs peer to peer. It wants a daemon on ports and a model or an API key; deja is one binary with neither, and reads forty-two harnesses rather than one. On the <a href="day-zero.html">day-zero corpus</a> the two are measured side by side.</p>
+<p><b>MemPalace</b> — the closest overlap by far, and the honest comparison is narrow: it also reads Claude Code sessions off disk and also keeps them verbatim. It brings a local embedding model and a vector store; deja is one binary with neither, parses 42 harnesses rather than three, and adds the things built around a code history specifically — <code>deja blame</code>, SSH sync, sanitized digests. If you want semantic paraphrase matching and don't mind a Python install with a 300&nbsp;MB model, theirs is the better fit.</p>
+<p><b>cognee / Graphiti</b> — you want a knowledge graph with entities, relationships and time-valid facts to reason over, and you accept a database and an LLM key as the price. deja does not build a graph; it searches what was said.</p>
+<p><b>Hindsight</b> — you want an agent to accumulate curated beliefs about the world over time, through an API you call. deja never writes memories of its own: it indexes the record your agents already produced.</p>
+<p><b>cass</b> — you want to sit and read across your own history, and you want the widest net: its pipeline names 26 and its connector list 32, against our 42 harnesses, in a TUI built for browsing a single timeline. It also serves an agent over MCP and strips secrets. deja's difference is the hook, not the search.</p>
+<p><b>Agent Sessions</b> — you are on a Mac and the question is where your quota went. It attributes 5-hour and weekly burn to the individual session, priced per model, which deja does not do at all. deja's own screen is a terminal search, with no quota view.</p>
+<p><b>casr</b> — you want to carry one session into a different agent and keep going with the same transcript. deja resumes a session in the tool that wrote it, or hands what it asked, settled and left open to another agent and starts it (<code>o</code> on the screen, <code>deja handoff --exec</code> on the CLI); it does not convert the transcript between formats.</p>
+<p><b>A vector database + your own pipeline</b> — you need semantic paraphrase matching above all. deja's lexical ladder loses to embeddings on pure paraphrase (we say so in the <a href="benchmarks.html">benchmarks</a>); it wins on identifiers, error strings, and everything code-shaped, with no key and no daemon.</p>
+
+<h2>What only deja does</h2>
+<p>Across the systems we've studied, these have no equivalent elsewhere: déjà&nbsp;vu recurrence detection ("you have been here" when a prompt matches solved work); origin-trust scopes on imported memory; sanitized <code>deja share</code> digests; and the whole thing in one binary, with no model and no runtime, that you can <code>scp</code>.</p>
+<p>This list used to open with "indexing history from before the tool was installed". It no longer does: MemPalace mines Claude Code, Codex and Cursor transcripts off disk too. Retroactive indexing is no longer ours alone either: agentmemory imports older Claude Code JSONL transcripts, and ctx imports existing histories from its own providers. It is still uncommon on this page rather than unheard of, and a page that claimed otherwise would be the wrong thing to trust.</p>
+
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

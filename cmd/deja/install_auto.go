@@ -1,0 +1,1515 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/vshulcz/deja-vu/internal/sources"
+)
+
+// Codex (v0.114+) ships lifecycle hooks with the same JSON contract as
+// Claude Code, so the existing `deja hook-context` output works unchanged.
+// We merge one SessionStart entry into ~/.codex/hooks.json and leave
+// everything else in the file alone.
+// codexHookWiring is every event deja installs into Codex, in one place because
+// install writes from it and doctor reads it. A hooks.json written by an older
+// deja — SessionStart alone, where there are now four — was reported as wired
+// on the strength of the trust entry, and the events added since reached
+// nobody.
+// hookWire is one event deja installs: the hook subcommand and its matcher.
+type hookWire = struct{ Event, Sub, Matcher string }
+
+var codexHookWiring = []hookWire{
+	// SessionStart carries the project digest. No matcher, as in Claude: codex
+	// fires this again with source "compact" after each compaction, and that is
+	// the moment the digest is worth most — measured on codex 0.149.0, one
+	// `codex exec` run compacted six times and "startup|resume" caught none of
+	// them, so the agent came out of every compaction with nothing.
+	{"SessionStart", "hook-context", ""},
+	// UserPromptSubmit answers the prompt itself. Codex sends the same payload
+	// Claude does — prompt, session_id, cwd — so hook-prompt reads it unchanged;
+	// measured on codex 0.149.0, the event fires on every `codex exec` turn.
+	{"UserPromptSubmit", "hook-prompt", ""},
+	// PreToolUse carries the prior decision for the file or command about to
+	// change, scoped to the tools that run a command or change a file (codex
+	// edits via apply_patch) so the hook does not spawn on every read.
+	{"PreToolUse", "hook-tool", "Bash|apply_patch"},
+	// And the fix pair when a command fails, which is the moment an agent never
+	// thinks to ask for it.
+	{"PostToolUse", "hook-tool-after", "Bash"},
+	// Compaction throws away the blocks this session was shown while the list
+	// that stops them repeating outlives them, so without this the memory codex
+	// just lost is the memory recall refuses to send again. Codex fires it with
+	// trigger "auto", the same shape Claude sends.
+	{"PreCompact", "hook-precompact", "manual|auto"},
+	// Codex fires SessionEnd on exit (measured on 0.149.0). Without it the
+	// session just quit kept its live stamp, and the next session's MCP recall
+	// left it out for the rest of the window (#4545, #4210).
+	{"SessionEnd", "hook-session-end", ""},
+}
+
+// codexHookTimeout is the timeout deja writes for a codex hook, in seconds.
+// codex-cli 0.149.0 caps SessionEnd at 3 s and warns on every start when the
+// file asks for more (#5126); the hook only drops the live stamp, so 3 s is
+// plenty. Every other event keeps 10.
+func codexHookTimeout(event string) int {
+	if event == "SessionEnd" {
+		return codexSessionEndCap
+	}
+	return 10
+}
+
+const codexSessionEndCap = 3
+
+func installCodexHooks(exe string, uninstall bool) (installResult, error) {
+	// Use CodexHome() (honours CODEX_HOME / DEJA_CODEX_ROOT) rather than a raw
+	// ~/.codex join, so a sandboxed install stays sandboxed and a non-default
+	// codex home gets its hooks written where codex actually reads them. Every
+	// other codex path already goes through it (e.g. doctor.go). See #850.
+	return installCodexHooksAt(exe, filepath.Join(sources.CodexHome(), "hooks.json"), filepath.Join(sources.CodexHome(), "config.toml"), codexHookWiring, uninstall)
+}
+
+// installCodexHooksAt writes wiring into the hooks file at path and moves the
+// trust pins kept in cfgPath with it. TRAE CLI, a codex-rs fork, reads the
+// same file in its own home.
+func installCodexHooksAt(exe, path, cfgPath string, wiring []hookWire, uninstall bool) (installResult, error) {
+	exe = hookExeFor(exe, uninstall)
+	old, err := readConfig(path)
+	if err != nil {
+		return installResult{}, err
+	}
+	var root map[string]any
+	if len(bytes.TrimSpace(old)) == 0 {
+		root = map[string]any{}
+	} else if err := json.Unmarshal(old, &root); err != nil {
+		return installResult{}, configParseError(path, err)
+	}
+	// What the file held before, for the trust pins below: a second parse
+	// rather than a copy, since the update edits the maps in place.
+	var before map[string]any
+	_ = json.Unmarshal(old, &before)
+	for _, h := range wiring {
+		updateCodexHook(root, h.Event, hookRun(exe, h.Sub), h.Matcher, uninstall)
+	}
+	if hooks, _ := root["hooks"].(map[string]any); len(hooks) == 0 {
+		delete(root, "hooks")
+	}
+	next, err := marshalConfigLike(old, root)
+	if err != nil {
+		return installResult{}, err
+	}
+	next = append(next, '\n')
+	a, err := writeIfChanged(path, old, next)
+	if err == nil && a != "unchanged" {
+		// Codex's approval of each hook is pinned by position in its
+		// config.toml; see codex_hook_trust.go. Install moves hooks too: a
+		// second copy of deja's entry it drops shifts the reader's hooks
+		// after it up a place (#4227).
+		err = moveCodexHookTrust(cfgPath, path, before, root)
+	}
+	return installResult{Path: path, Action: a}, err
+}
+
+// updateCodexHook merges one deja hook for an event into codex's hooks.json,
+// idempotently: it adopts an entry we already own (so a move or an upgrade
+// updates in place) and adds one otherwise. Same shape as updateClaudeHook.
+func updateCodexHook(root map[string]any, event, cmd, matcher string, uninstall bool) {
+	hooks, _ := root["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+		root["hooks"] = hooks
+	}
+	entries, _ := hooks[event].([]any)
+	var kept []any
+	found := false
+	for _, entryAny := range entries {
+		entry, _ := entryAny.(map[string]any)
+		if entry != nil && entryHasCommand(entry, cmd) {
+			if uninstall {
+				continue
+			}
+			// One of ours is enough. A config can carry the entry twice — a
+			// hand-edited copy, a merge that kept both sides — and adopting
+			// each of them left the hook firing twice on every prompt.
+			if found {
+				continue
+			}
+			found = true
+			adoptCodexHookEntry(entry, cmd, event)
+			// An install from before #5126 wrote 10 here, which codex clamps
+			// with a warning on every start. A lower value the reader set
+			// stays.
+			if event == "SessionEnd" {
+				capHookTimeout(entry, cmd, codexSessionEndCap)
+			}
+			// The matcher is part of the wiring, not a user setting, so an
+			// upgrade has to rewrite it: the SessionStart entry written when
+			// this meant "startup|resume" went on missing every compaction
+			// through any number of installs, because adopting it left the
+			// pattern alone.
+			if matcher == "" {
+				delete(entry, "matcher")
+			} else {
+				entry["matcher"] = matcher
+			}
+		}
+		kept = append(kept, entryAny)
+	}
+	if !uninstall && !found {
+		h := map[string]any{"type": "command", "command": cmd, "timeout": codexHookTimeout(event)}
+		// Codex surfaces statusMessage in its hook run summary.
+		if msg := hookStatusMessage(event); msg != "" {
+			h["statusMessage"] = msg
+		}
+		entry := map[string]any{"hooks": []any{h}}
+		// An event that applies to every turn has no matcher, and codex's own
+		// examples leave the key out rather than carrying an empty pattern.
+		if matcher != "" {
+			entry["matcher"] = matcher
+		}
+		kept = append(kept, entry)
+	}
+	if len(kept) == 0 {
+		delete(hooks, event)
+	} else {
+		hooks[event] = kept
+	}
+}
+
+// adoptHookTimeout sets the timeout on the hook deja owns inside an entry,
+// leaving any line a reader wrote around it alone.
+func adoptHookTimeout(entry map[string]any, cmd string, timeout int) {
+	hs, _ := entry["hooks"].([]any)
+	for _, hAny := range hs {
+		h, _ := hAny.(map[string]any)
+		if h == nil || h["type"] != "command" || hookCommandKindOf(h["command"], cmd) != hookDejas {
+			continue
+		}
+		h["timeout"] = timeout
+	}
+}
+
+// capHookTimeout lowers the timeout on the hook deja owns inside an entry to
+// limit when it asks for more, or says nothing at all.
+func capHookTimeout(entry map[string]any, cmd string, limit int) {
+	hs, _ := entry["hooks"].([]any)
+	for _, hAny := range hs {
+		h, _ := hAny.(map[string]any)
+		if h == nil || h["type"] != "command" || hookCommandKindOf(h["command"], cmd) != hookDejas {
+			continue
+		}
+		if t, ok := h["timeout"].(float64); !ok || t > float64(limit) {
+			h["timeout"] = limit
+		}
+	}
+}
+
+// adoptCodexHookEntry rewrites the command and status message of an entry deja
+// already owns.
+func adoptCodexHookEntry(entry map[string]any, cmd, event string) {
+	hs, _ := entry["hooks"].([]any)
+	for _, hAny := range hs {
+		h, _ := hAny.(map[string]any)
+		// hookDejas, not "deja runs in here somewhere": a line the reader
+		// wrote around our hook is theirs, and rewriting it throws away the
+		// rest of what it does (#2477).
+		if h == nil || h["type"] != "command" || hookCommandKindOf(h["command"], cmd) != hookDejas {
+			continue
+		}
+		h["command"] = cmd
+		if msg := hookStatusMessage(event); msg != "" {
+			h["statusMessage"] = msg
+		}
+	}
+}
+
+// entryHasCommand matches on the trailing subcommand rather than the whole
+// string, so an install from a new binary path replaces our old entry instead
+// of leaving it to fire alongside the new one.
+func entryHasCommand(entry map[string]any, cmd string) bool {
+	hs, _ := entry["hooks"].([]any)
+	for _, hAny := range hs {
+		h, _ := hAny.(map[string]any)
+		if h != nil && h["type"] == "command" && isDejaHookCommand(h["command"], cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+// opencode has no session-start hook; its plugin API can push text onto the
+// system prompt per request. The generated plugin shells out to
+// `deja hook-context --plain` once per session and caches the result.
+func installOpencodePlugin(exe string, uninstall bool) (installResult, error) {
+	return installOpencodeShapedPlugin(filepath.Join(opencodeConfigHome(), "opencode", "plugins"), exe, uninstall, opencodePluginJSFor)
+}
+
+// installOpencodeShapedPlugin writes deja.js into a plugins directory an
+// opencode-derived loader globs, or takes it back out.
+func installOpencodeShapedPlugin(dir, exe string, uninstall bool, js func(exe string) string) (installResult, error) {
+	// The launcher, not this binary: a generated plugin is as much a
+	// config as a hooks.json, and one that names the build it was
+	// installed from stops working the day that build moves (#3682).
+	exe = hookExeFor(exe, uninstall)
+	path := filepath.Join(dir, "deja.js")
+	if uninstall {
+		// Only the file deja generated: a deja.js someone wrote by hand in
+		// the same directory is theirs.
+		if b, err := os.ReadFile(path); err != nil || !strings.HasPrefix(string(b), "// generated by deja install") {
+			return installResult{Path: path, Action: "unchanged"}, nil
+		}
+		if err := os.Remove(path); err != nil {
+			return installResult{}, err
+		}
+		// And the plugins directory deja made for it (#3698).
+		pruneCreatedDir(dir)
+		return installResult{Path: path, Action: "removed"}, nil
+	}
+	old, err := readConfig(path)
+	if err != nil {
+		return installResult{}, err
+	}
+	next := []byte(js(exe))
+	a, err := writeIfChanged(path, old, next)
+	return installResult{Path: path, Action: a}, err
+}
+
+func opencodePluginJS(exe string) string {
+	// OpenCode V2 reads only the module's default export, and it must carry
+	// an id and a setup (or effect) function; the V1 named-export shape was
+	// rejected outright ("Missing key at [\"default\"]", ref err_bb76d60a),
+	// which silently cost every session its auto-recall. The V1 hooks map
+	// onto V2 domains: the system and message transforms become session
+	// "context" hooks, the compaction notice becomes the "compaction" hook,
+	// and the tool pair becomes ctx.tool "execute.before"/"execute.after".
+	// The shell helper is no longer handed to the plugin, so the hook
+	// launcher is spawned directly with the payload on stdin — one
+	// encoding, no quoting.
+	//
+	// The definition is a plain { id, setup } object rather than
+	// Plugin.define(): a local plugin resolves bare specifiers from its own
+	// directory, where @opencode/plugin is not installed ("Cannot find
+	// package '@opencode/plugin' imported from .../plugins/deja.js"), and
+	// define() is the identity function anyway.
+	//
+	// The toast is gone: a V2 server plugin has no channel to the TUI, so
+	// the receipt and the build note have nowhere to be said. The digest
+	// itself still rides the recall envelope.
+	return fmt.Sprintf(`// generated by deja install — safe to delete; regenerate with: deja install opencode-auto
+import { spawn } from "node:child_process"
+
+const HOOK = %q
+
+// HOOK_DEADLINE is how long a hook may hold up the model request. opencode
+// awaits the hook first, so a call stuck on a store read stalled the turn
+// with it (#4951). Past it the turn goes on without memory.
+const HOOK_DEADLINE = 10000
+
+// runHook runs the deja hook launcher and resolves with its stdout,
+// feeding payload on stdin when there is one. Never rejects: memory is
+// optional.
+const runHook = (subcommand, payload, cwd) =>
+  new Promise((resolve) => {
+    let child
+    try {
+      // stderr is not read, so it is not piped: a full pipe would block the
+      // hook, and one a grandchild holds would outlive the deadline.
+      child = spawn(HOOK, [subcommand], { stdio: ["pipe", "pipe", "ignore"], ...(cwd ? { cwd } : {}) })
+    } catch {
+      resolve("")
+      return
+    }
+    let out = ""
+    const timer = setTimeout(() => {
+      resolve("")
+      try { child.kill("SIGKILL") } catch {}
+      // A grandchild can still hold the pipe; let go of it too.
+      child.stdout.destroy()
+    }, HOOK_DEADLINE)
+    timer.unref?.()
+    child.stdout.on("data", (d) => { out += d })
+    child.on("error", () => { clearTimeout(timer); resolve("") })
+    child.on("close", () => { clearTimeout(timer); resolve(out) })
+    child.stdin.on("error", () => {})
+    if (payload !== undefined) child.stdin.write(payload)
+    child.stdin.end()
+  })
+
+export default {
+  id: "deja-recall",
+  async setup(ctx) {
+    // deja ranks by project, and the project is a directory. The plugin
+    // instance's location is the one opencode hands over; without it every
+    // call took the server process's cwd, which is where opencode was
+    // launched rather than where the work is. Asked from the wrong
+    // directory the same question answers out of another project's
+    // sessions, and from a directory with no history it answers nothing
+    // at all.
+    const cwd = ctx.location?.directory || process.cwd()
+    const cache = new Map()
+    // How many times this session was answered with nothing. The empty
+    // answer is cached so the plugin does not shell out every turn, but
+    // its reasons are not alike: no history is permanent, while a locked
+    // index, a call that did not get through, or an upgrade replacing the
+    // binary are over by the next turn. Counted, so a store that really
+    // is empty is still asked only a few times.
+    const empties = new Map()
+    const emptyRetries = 3
+    // Every session this plugin stamped live, ended when its turn is: 2.x has
+    // no event hook or dispose in the table 1.x reads, so the #4546 end never
+    // ran here and a finished session stayed out of the next one's MCP recall
+    // for twenty minutes (#4571).
+    const live = new Set()
+    const endSession = (id) => runHook("hook-session-end", JSON.stringify({ session_id: id, cwd }), cwd)
+    // A sub-agent's session names its parent. Without it the sub-agent's
+    // digest and recall led with the parent, which is live and is the very
+    // session that spawned it (#4548, fixed for 1.x). 2.x hands the plugin
+    // ctx.session.get, whose SessionInfo carries parentID; asked once per
+    // session.
+    const parents = new Map()
+    const parentOf = async (id) => {
+      if (!id) return ""
+      if (!parents.has(id)) {
+        let parent = ""
+        try {
+          parent = (await ctx.session.get({ sessionID: id }))?.parentID || ""
+        } catch {
+          // no parent to leave out
+        }
+        parents.set(id, parent)
+      }
+      return parents.get(id)
+    }
+    // The per-prompt recall each user message was given, by message.
+    const recalled = new Map()
+    const remember = (key, extra) => {
+      recalled.set(key, extra)
+      if (recalled.size > 1000) recalled.delete(recalled.keys().next().value)
+    }
+
+    // Session digest: fold into the first system block rather than
+    // appending a second one. An OpenAI-compatible endpoint that requires
+    // the system message to come first rejects the whole request
+    // otherwise, so installing deja made opencode fail every turn against
+    // a local model: "Not Found: System message must be at the beginning."
+    // It goes after opencode's own prompt, which is the same in every session
+    // and is what the provider's prompt cache keeps.
+    await ctx.session.hook("context", async (event) => {
+      try {
+        const key = event.sessionID || "default"
+        if (event.sessionID) live.add(event.sessionID)
+        if (!cache.has(key)) {
+          // The session id rides along so the digest leaves this session
+          // out: the context hook runs after the first message is stored,
+          // and the index can already hold it (#4199).
+          const raw = await runHook("hook-context", JSON.stringify({ session_id: event.sessionID || "", parent_session_id: await parentOf(event.sessionID), cwd }), cwd)
+          let digest = ""
+          try {
+            digest = JSON.parse(raw)?.hookSpecificOutput?.additionalContext || ""
+          } catch {
+            digest = raw.trim()
+          }
+          cache.set(key, digest)
+        }
+        const digest = cache.get(key)
+        if (digest) {
+          if (event.system.length) event.system[0].text = event.system[0].text + "\n\n" + digest
+          else event.system.push({ type: "text", text: digest })
+          return
+        }
+        const asks = (empties.get(key) || 0) + 1
+        empties.set(key, asks)
+        if (asks < emptyRetries) cache.delete(key)
+      } catch {
+        // memory is optional: never break the session over it
+      }
+    })
+
+    // Per-prompt recall: ranked by what the user just asked, not just by
+    // the project. The session id travels with the payload so recall can
+    // skip what it already showed this session; without it every message
+    // re-injects the same block.
+    await ctx.session.hook("context", async (event) => {
+      try {
+        const sid = event.sessionID || ""
+        const users = []
+        for (const m of event.messages || []) {
+          if (m?.role !== "user") continue
+          const parts = (m.content || []).filter((p) => p?.type === "text" && p.text)
+          const prompt = parts.map((p) => p.text).join("\n").trim()
+          users.push({ key: m.id || sid + "#" + users.length + "#" + prompt, parts, prompt })
+        }
+        const last = users[users.length - 1]
+        if (!last) return
+        // Asked once per message. opencode builds every model call afresh
+        // from its store, so text added to a message here lasts one call:
+        // once the agent ran a tool the recall was gone, and deja, having
+        // shown it, would not send it again (#4786).
+        if (!recalled.has(last.key)) {
+          // A turn with no text, an image alone, still goes to hook-prompt:
+          // that call is what stamps the session live again after its last
+          // turn ended it (#4573).
+          if (sid) live.add(sid)
+          const raw = await runHook("hook-prompt", JSON.stringify({ prompt: last.prompt, session_id: sid, parent_session_id: await parentOf(sid), cwd }))
+          remember(last.key, last.prompt && raw.trim() ? JSON.parse(raw)?.hookSpecificOutput?.additionalContext || "" : "")
+        }
+        // Every message gets back what it was given, in every call, the way
+        // Claude Code keeps a prompt hook's text in its transcript.
+        for (const u of users) {
+          const extra = recalled.get(u.key)
+          const tail = u.parts[u.parts.length - 1]
+          if (extra && tail && !tail.text.endsWith(extra)) tail.text += "\n\n" + extra
+        }
+      } catch {
+        // memory is optional: never break the session over it
+      }
+    })
+
+    // Compaction is about to throw away the working transcript: index
+    // what exists now, so the session survives in memory even after the
+    // window is collapsed.
+    await ctx.session.hook("compaction", async (event) => {
+      try {
+        // With the session id deja reads the turns from the store and keeps a
+        // recovery packet for the next turn; without one it only forgets.
+        await runHook("hook-precompact", JSON.stringify({ session_id: event?.sessionID || "", cwd, harness: "opencode" }), cwd)
+      } catch {
+        // memory is optional: never break a compaction over it
+      }
+    })
+
+    // A spawned agent gets none of the above: its instructions are the
+    // one thing that reaches it, so recall goes in there. The payload is
+    // encoded once — deja expects an object, not a quoted string.
+    await ctx.tool.hook("execute.before", async (event) => {
+      try {
+        if (event.tool !== "subagent") return
+        const args = event.input
+        if (!args?.prompt) return
+        const payload = {
+          hook_event_name: "PreToolUse",
+          tool_name: "Task",
+          tool_input: { prompt: args.prompt },
+          session_id: event.sessionID || "",
+          cwd,
+        }
+        const raw = await runHook("hook-tool", JSON.stringify(payload))
+        if (!raw.trim()) return
+        const next = JSON.parse(raw)?.hookSpecificOutput?.updatedInput?.prompt
+        if (next) event.input = { ...args, prompt: next }
+      } catch {
+        // memory is optional: never break a spawn over it
+      }
+    })
+
+    // The moment a command fails is the one an agent never thinks to ask
+    // about. The line cannot be handed to the model directly, so it is
+    // folded into the tool's own output, which the next request carries
+    // as the tool result. A failed command still reports "completed"
+    // here: the failure lives in the text and the exit metadata, not the
+    // status.
+    await ctx.tool.hook("execute.after", async (event) => {
+      try {
+        // A file's history, at the read before the edit: the before-seam can
+        // only rewrite arguments, so this is where the line can reach the
+        // model. Matched on the argument, because the tool that carries a file
+        // path is a file action whatever this version calls it.
+        const fpath = event.input?.filePath || event.input?.path || ""
+        if (fpath && event.tool !== "shell" && event.status === "completed") {
+          const fres = event.result || {}
+          const fcontent = Array.isArray(fres.content) ? fres.content : []
+          const fpayload = {
+            hook_event_name: "PostToolUse",
+            tool_name: event.tool || "read",
+            tool_input: { file_path: fpath },
+            session_id: event.sessionID || "",
+            cwd,
+          }
+          const fraw = await runHook("hook-tool", JSON.stringify(fpayload))
+          if (!fraw.trim()) return
+          const fextra = JSON.parse(fraw)?.hookSpecificOutput?.additionalContext
+          if (fextra) event.result = { ...fres, content: [...fcontent, { type: "text", text: fextra }] }
+          return
+        }
+        if (event.tool !== "shell" || event.status !== "completed") return
+        const result = event.result || {}
+        const content = Array.isArray(result.content)
+          ? result.content
+          : typeof result.content === "string"
+            ? [{ type: "text", text: result.content }]
+            : typeof result.output === "string"
+              ? [{ type: "text", text: result.output }]
+              : []
+        const text = content.filter((c) => c?.type === "text").map((c) => c.text).join("\n")
+        if (!text) return
+        const payload = {
+          hook_event_name: "PostToolUse",
+          tool_name: "bash",
+          tool_input: { command: event.input?.command || "" },
+          tool_response: { output: text },
+          session_id: event.sessionID || "",
+          cwd,
+        }
+        const raw = await runHook("hook-tool-after", JSON.stringify(payload))
+        if (!raw.trim()) return
+        const extra = JSON.parse(raw)?.hookSpecificOutput?.additionalContext
+        if (extra) event.result = { ...result, content: [...content, { type: "text", text: extra }] }
+      } catch {
+        // memory is optional: never break a tool call over it
+      }
+    })
+
+    // A turn is over when its execution ends: 2.0.22 publishes
+    // session.execution.succeeded, .failed or .interrupted, and none of 1.x's
+    // session.idle, which its schema still carries.
+    const stop = new AbortController()
+    if (typeof ctx.event?.subscribe === "function") {
+      ;(async () => {
+        for await (const event of ctx.event.subscribe({ signal: stop.signal })) {
+          const ends = ["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "session.idle"]
+          const id = ends.includes(event?.type) ? event.data?.sessionID : ""
+          // Out of live only once ended: opencode run shuts down a few
+          // milliseconds after the turn, and the cleanup ends what is left.
+          if (id && live.has(id)) {
+            await endSession(id)
+            live.delete(id)
+          }
+        }
+      })().catch(() => {})
+    }
+    // opencode run awaits this before it exits.
+    return async () => {
+      stop.abort()
+      for (const id of live) await endSession(id)
+      live.clear()
+    }
+  },
+}
+`, exe)
+}
+
+// opencodeVersionMajorReal is the major version of the opencode on PATH, or 0
+// when there is no opencode to ask.
+var opencodeVersionMajorReal = func() int {
+	// The escape hatch for a machine where the binary is not on PATH under
+	// that name — a shell alias, a bun run, a wrapper script — and for a test
+	// that must not depend on which opencode the developer happens to have.
+	// It picks the plugin install writes and nothing else: the store reader
+	// looks at the tables, whatever version is installed.
+	if v := os.Getenv("DEJA_OPENCODE_MAJOR"); v != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n
+		}
+	}
+	exe, err := exec.LookPath("opencode")
+	if err != nil {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, exe, "--version").Output()
+	if err != nil {
+		return 0
+	}
+	m := regexp.MustCompile(`(\d+)\.\d+\.\d+`).FindSubmatch(out)
+	if m == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// opencodeVersionMajor is what install asks, indirected so a test can say which
+// opencode is installed without one being installed.
+var opencodeVersionMajor = opencodeVersionMajorReal
+
+// opencodePluginJSFor is the plugin the installed opencode can actually load.
+// The binary on PATH answers it; with no binary to ask, the store does, since a
+// 2.0 home has already migrated its tables. Neither answers on a machine where
+// opencode has never run, and a fresh install is 2.x.
+func opencodePluginJSFor(exe string) string {
+	if opencodeIsV1() {
+		return opencodeLegacyPluginJS(exe)
+	}
+	return opencodePluginJS(exe)
+}
+
+// opencodeIsV1 is whether the opencode here loads 1.x plugins.
+func opencodeIsV1() bool {
+	switch major := opencodeVersionMajor(); {
+	case major == 1:
+		return true
+	case major >= 2:
+		return false
+	}
+	if db := sources.OpencodeDB(); db != "" {
+		if _, err := os.Stat(db); err == nil && !sources.OpencodeStoreIsV2(db) {
+			return true
+		}
+	}
+	return false
+}
+
+// opencodeLegacyPluginJS is the 1.x plugin: a named export returning the
+// experimental hook table. 1.18.32 refuses the 2.0 file outright — "Plugin
+// .../deja.js must default export an object with server()" — so a store still
+// on 1.x keeps this one, and nothing is written that the installed opencode
+// cannot load.
+func opencodeLegacyPluginJS(exe string) string {
+	return legacyPluginJSFor("opencode-auto", exe)
+}
+
+// legacyPluginJSFor is the 1.x plugin with the target that regenerates it in
+// its header: Kilo CLI loads the same file (#4398).
+func legacyPluginJSFor(target, exe string) string {
+	// opencode's hook output goes into the model's context, so a progress
+	// note cannot ride along with it — it would be prompt noise. The TUI
+	// toast is the channel meant for the human, so the build announces itself
+	// there instead, once per session so it does not nag on every turn.
+	return "// generated by deja install — safe to delete; regenerate with: deja install " + target + "\n" +
+		"const HARNESS = " + strconv.Quote(strings.TrimSuffix(target, "-auto")) + "\n" + fmt.Sprintf(`export const DejaRecall = async ({ $, client, directory }) => {
+  // deja ranks by project, and the project is a directory. opencode hands the
+  // plugin the session's own; without it every call took the server process's
+  // cwd, which is where opencode was launched rather than where the work is.
+  // Asked from the wrong directory the same question answers out of another
+  // project's sessions, and from a directory with no history it answers
+  // nothing at all.
+  const cwd = directory || process.cwd()
+  const cache = new Map()
+  const told = new Set()
+  // How many times this session was answered with nothing. The empty answer
+  // is cached so the plugin does not shell out every turn, but its reasons
+  // are not alike: no history is permanent, while a locked index, a call that
+  // did not get through, or an upgrade replacing the binary are over by the
+  // next turn. Cached alike, one bad moment cost the session all of its
+  // memory. Counted, so a store that really is empty is still asked only a
+  // few times.
+  const empties = new Map()
+  const emptyRetries = 3
+  // Sessions between their compaction hook and the summary request.
+  const compacting = new Set()
+  // Every session this plugin stamped live. opencode never says a session
+  // ended, so without ending them here the stamp sat out its whole window and
+  // the next session's MCP recall left a finished one out (#4546).
+  const live = new Set()
+  const endSession = (id) => $%secho ${JSON.stringify({ session_id: id, cwd })} | %q hook-session-end%s.quiet()
+  // The per-prompt recall each user message was given, by message.
+  const recalled = new Map()
+  const remember = (key, extra) => {
+    recalled.set(key, extra)
+    if (recalled.size > 1000) recalled.delete(recalled.keys().next().value)
+  }
+  // The session that spawned each one, asked of opencode once. A task
+  // sub-agent's digest and recall led with its parent, which is live and
+  // asking through it (#4548).
+  const parents = new Map()
+  const parentOf = async (id) => {
+    if (!id) return ""
+    if (!parents.has(id)) {
+      let parent = ""
+      try {
+        const res = await client?.session?.get?.({ path: { id } })
+        parent = res?.data?.parentID || ""
+      } catch {
+        // no parent to leave out
+      }
+      parents.set(id, parent)
+    }
+    return parents.get(id)
+  }
+  return {
+    "experimental.chat.system.transform": async (input, output) => {
+      try {
+        // The title request runs this transform too, and the digest went into
+        // the title generator's prompt (#4795). Kilo names it title-<session>;
+        // opencode 1.x passes the session's own id, with the title agent's
+        // prompt first.
+        if (String(input.sessionID || "").startsWith("title-")) return
+        if (String(output.system?.[0] || "").startsWith("You are a title generator")) return
+        // The summary request is the last one a compaction makes, and the
+        // digest has no business in it: asked here, deja would hand the
+        // summariser the recovery packet meant for the turn after.
+        if (input.sessionID && compacting.delete(input.sessionID)) return
+        const key = input.sessionID || "default"
+        if (input.sessionID) live.add(input.sessionID)
+        if (!cache.has(key)) {
+          // The session id rides along so the digest leaves this session
+          // out: the transform runs after the first message is stored, and
+          // the index can already hold it (#4199).
+          const raw = await $%scd ${cwd} && echo ${JSON.stringify({ session_id: input.sessionID || "", parent_session_id: await parentOf(input.sessionID), cwd })} | %q %s%s.text()
+          let ctx = "", receipt = ""
+          try {
+            const parsed = JSON.parse(raw)
+            ctx = parsed?.hookSpecificOutput?.additionalContext || ""
+            receipt = parsed?.systemMessage || ""
+          } catch {
+            ctx = raw.trim()
+          }
+          cache.set(key, ctx)
+          // The receipt is the only sign the user gets that memory arrived.
+          // Once per session: repeating it every turn is wallpaper.
+          if (receipt && !told.has(key)) {
+            told.add(key)
+            await client.tui.showToast({ body: { message: receipt, variant: "info", duration: 6000 } })
+          }
+        }
+        const ctx = cache.get(key)
+        if (ctx) {
+          // Fold into the first system block rather than appending a second
+          // one. An OpenAI-compatible endpoint that requires the system
+          // message to come first rejects the whole request otherwise, so
+          // installing deja made opencode fail every turn against a local
+          // model: "Not Found: System message must be at the beginning."
+          // After opencode's own prompt, not before it: that prompt is the
+          // same in every session and is what the provider's prompt cache keeps.
+          if (output.system.length) output.system[0] = output.system[0] + "\n\n" + ctx
+          else output.system.push(ctx)
+          return
+        }
+        // Nothing to recall: there is no history yet, the first index is still
+        // being built, or the call did not get through. Only the build is worth
+        // saying out loud; the rest is worth asking again.
+        const asks = (empties.get(key) || 0) + 1
+        empties.set(key, asks)
+        if (asks < emptyRetries) cache.delete(key)
+        if (told.has(key)) return
+        const status = (await $%s%q %s%s.text()).trim()
+        if (!status) return
+        told.add(key)
+        cache.delete(key)
+        await client.tui.showToast({ body: { message: status, variant: "info", duration: 6000 } })
+      } catch {
+        // memory is optional: never break the session over it
+      }
+    },
+    // Compaction is about to summarise the session away. The turns are still
+    // in the store, so deja reads them by the session id and keeps a recovery
+    // packet — commands, how they went, what was open — for the next turn,
+    // as Claude Code gets through PreCompact.
+    "experimental.session.compacting": async (input) => {
+      try {
+        const sessionID = input?.sessionID || ""
+        if (sessionID) compacting.add(sessionID)
+        await $%secho ${JSON.stringify({ session_id: sessionID, cwd, harness: HARNESS })} | %q hook-precompact%s.quiet()
+      } catch {
+        // memory is optional: never break a compaction over it
+      }
+    },
+    // Per-prompt recall, the same relevance pass Claude Code gets on
+    // UserPromptSubmit: the session digest is ranked by the project, this is
+    // ranked by what the user just asked. Silent when nothing matches.
+    "experimental.chat.messages.transform": async (input, output) => {
+      try {
+        const msgs = output.messages || []
+        // The compaction's own request runs this transform right after the
+        // compacting hook. Recall there would land in the summariser's input
+        // and the packet would count as delivered to a turn that never saw it.
+        const owner = msgs.find((m) => m?.info?.sessionID)?.info?.sessionID
+        if (owner && compacting.has(owner)) return
+        const users = []
+        for (const m of msgs) {
+          if (m?.info?.role !== "user") continue
+          const parts = (m.parts || []).filter((p) => p?.type === "text" && p.text)
+          const prompt = parts.map((p) => p.text).join("\n").trim()
+          users.push({ key: m.info?.id || (m.info?.sessionID || "") + "#" + users.length + "#" + prompt, parts, prompt, sessionID: m.info?.sessionID || "" })
+        }
+        const last = users[users.length - 1]
+        if (!last) return
+        // Asked once per message. opencode builds every model call afresh
+        // from its store, so text added to a message here lasts one call:
+        // once the agent ran a tool the recall was gone, and deja, having
+        // shown it, would not send it again (#4786).
+        if (!recalled.has(last.key)) {
+          // A turn with no text, an image alone, still goes to hook-prompt:
+          // that call is what stamps the session live again after
+          // session.idle ended it (#4573).
+          // The session id travels with the payload so recall can skip what
+          // it already showed this session. Without it every message
+          // re-injects the same block: measured on a real store, half of all
+          // injections were a word-for-word repeat, and all but five of those
+          // came within a minute.
+          const sessionID = input?.sessionID || last.sessionID
+          if (sessionID) live.add(sessionID)
+          const prompt = last.prompt
+          const raw = await $%secho ${JSON.stringify({ prompt, session_id: sessionID, parent_session_id: await parentOf(sessionID), cwd })} | %s%q hook-prompt%s.text()
+          remember(last.key, prompt && raw.trim() ? JSON.parse(raw)?.hookSpecificOutput?.additionalContext || "" : "")
+        }
+        // Every message gets back what it was given, in every call, the way
+        // Claude Code keeps a prompt hook's text in its transcript.
+        for (const u of users) {
+          const extra = recalled.get(u.key)
+          const tail = u.parts[u.parts.length - 1]
+          if (extra && tail && !tail.text.endsWith(extra)) tail.text += "\n\n" + extra
+        }
+      } catch {
+        // memory is optional: never break the session over it
+      }
+    },
+    // A spawned agent gets none of the above: the system prompt is built for
+    // the session that spawned it and the per-prompt pass fires on what the
+    // user typed, which a subagent never does. Its instructions are the one
+    // thing that reaches it, so recall goes in there.
+    "tool.execute.before": async (input, output) => {
+      try {
+        if (input?.tool !== "task") return
+        const args = output?.args
+        if (!args?.prompt) return
+        // One encoding, not two. Stringified again on the way into the shell,
+        // deja received a JSON string where it expects an object, read nothing
+        // out of it and answered with silence — so a spawned agent in opencode
+        // has been starting with no memory at all.
+        const payload = {
+          hook_event_name: "PreToolUse",
+          tool_name: "Task",
+          tool_input: { prompt: args.prompt },
+          session_id: input.sessionID || "",
+          cwd,
+        }
+        const raw = await $%secho ${JSON.stringify(payload)} | %s%q hook-tool%s.text()
+        if (!raw.trim()) return
+        const next = JSON.parse(raw)?.hookSpecificOutput?.updatedInput?.prompt
+        if (next) args.prompt = next
+      } catch {
+        // memory is optional: never break a spawn over it
+      }
+    },
+    // The moment a command fails is the one an agent never thinks to ask
+    // about, and this is the only seam opencode has for it. The hook returns
+    // void, so the line cannot be handed to the model directly — it is
+    // appended to the tool's own output, which the next request carries as the
+    // tool result. Verified against a real run: a string written here arrives
+    // in the tool message of the following request.
+    "tool.execute.after": async (input, output) => {
+      try {
+        // A file's history, at the read before the edit. opencode's
+        // before-seam can only rewrite a tool's arguments, so the line goes
+        // out the way the failure line does: appended to the tool's own
+        // output, which the next request carries as the tool result. Matched
+        // on the argument rather than the tool name — a tool carrying a file
+        // path is a file action whatever this version calls it.
+        const fpath = input?.args?.filePath || input?.args?.path || ""
+        if (fpath && input?.tool !== "bash") {
+          const ftext = output?.output
+          if (!ftext) return
+          const fpayload = {
+            hook_event_name: "PostToolUse",
+            tool_name: input?.tool || "read",
+            tool_input: { file_path: fpath },
+            session_id: input.sessionID || "",
+            cwd,
+          }
+          const fraw = await $%secho ${JSON.stringify(fpayload)} | %s%q hook-tool%s.text()
+          if (!fraw.trim()) return
+          const fextra = JSON.parse(fraw)?.hookSpecificOutput?.additionalContext
+          if (fextra) output.output = ftext + "\n\n" + fextra
+          return
+        }
+        if (input?.tool !== "bash") return
+        const text = output?.output
+        if (!text) return
+        const payload = {
+          hook_event_name: "PostToolUse",
+          tool_name: "bash",
+          tool_input: { command: input?.args?.command || "" },
+          tool_response: { output: text },
+          session_id: input.sessionID || "",
+          cwd,
+        }
+        const raw = await $%secho ${JSON.stringify(payload)} | %s%q hook-tool-after%s.text()
+        if (!raw.trim()) return
+        const extra = JSON.parse(raw)?.hookSpecificOutput?.additionalContext
+        if (extra) output.output = text + "\n\n" + extra
+      } catch {
+        // memory is optional: never break a tool call over it
+      }
+    },
+    // A turn is over when opencode publishes session.idle, and the next prompt
+    // stamps the session again before the model can ask anything, so the
+    // session is history to everyone else in between.
+    event: async ({ event }) => {
+      try {
+        const id = event?.type === "session.idle" ? event.properties?.sessionID : ""
+        if (!id) return
+        await endSession(id)
+        // Ended, so dispose does not spawn deja for it again on the way out.
+        live.delete(id)
+      } catch {
+        // memory is optional: never break the session over it
+      }
+    },
+    // opencode run exits without waiting for the event above, and it does
+    // wait for dispose: a one-shot run ends what it started here.
+    dispose: async () => {
+      for (const id of live) {
+        try {
+          await endSession(id)
+        } catch {
+          // memory is optional
+        }
+      }
+      live.clear()
+    },
+  }
+}
+`, "`", exe, "`", "`", exe, "hook-context", "`", "`", exe, "warmup-status", "`", "`", exe, "`", "`", "", exe, "`", "`", "", exe, "`", "`", "", exe, "`", "`", "", exe, "`")
+}
+
+// Gemini CLI and Qwen Code both run a command before the agent loop, which is
+// the same injection point Claude Code's SessionStart gives us — so
+// auto-recall works there too, not just MCP on demand.
+//
+// They are not the same shape, and both differences were found by running
+// them rather than by reading their bundles:
+//
+//   - Gemini calls the event BeforeAgent (it has no SessionStart) and reads
+//     `timeout` in MILLISECONDS. A Claude-style `"timeout": 10` is ten
+//     milliseconds there, and the hook is killed before it can answer.
+//   - Qwen forked from an older Gemini and kept SessionStart with a matcher,
+//     with `timeout` in seconds.
+func installGeminiAuto(exe string, uninstall bool) (installResult, error) {
+	// Clear the settings.json hook older versions wrote: it never fired, and
+	// leaving it behind makes a dead integration look installed.
+	if _, err := installSettingsHook(
+		filepath.Join(sources.GeminiHome(), "settings.json"),
+		"BeforeAgent", "", 10000, exe, true); err != nil {
+		return installResult{}, err
+	}
+	return installGeminiExtension(exe, uninstall)
+}
+
+// Qwen's `timeout` is MILLISECONDS, like Gemini's — the 10 deja used to write
+// killed the hook ten milliseconds in, which is indistinguishable from a
+// harness that has no hooks.
+//
+// SessionStart used to be dropped here: qwen ran it and consumed nothing, so
+// deja retired the entry rather than leave a hook answering into the void. That
+// is no longer true — on qwen-code 0.20.0 the digest reaches the model, and so
+// does what a hook returns after a tool. PreToolUse fires and its output does
+// not, so it stays unwired.
+//
+// The failure is its own event. Measured on 0.20.0 against a recording
+// endpoint: PostToolUse fires only when the tool succeeded — qwen guards it
+// with `!toolResult.error` and calls firePostToolUseFailureHook otherwise — so
+// the fix pair sat on the one event that never fires at a failure, which is the
+// moment it exists for.
+var qwenHookWiring = []struct{ Event, Sub, Matcher string }{
+	{"SessionStart", "hook-context", ""},
+	{"UserPromptSubmit", "hook-prompt", ""},
+	// The fix pair, at the failure. Matched on the tool that runs a command so
+	// it never spawns on a read.
+	{"PostToolUseFailure", "hook-tool-after", "run_shell_command"},
+	// The file line, after a read or an edit: PreToolUse is not read, and
+	// what PostToolUse returns goes in beside the tool's result.
+	{"PostToolUse", "hook-tool", "read_file|edit|write_file"},
+	// Compaction throws away the blocks this session was shown while the list
+	// that stops them repeating outlives them, so without this the memory qwen
+	// just lost is the memory recall refuses to send again.
+	{"PreCompact", "hook-precompact", ""},
+	// The session is over, so its live stamp goes and the next session's MCP
+	// recall can answer with it (#4257). qwen-code 0.20.0 fires it on an
+	// interactive exit and from ACP; a one-shot `qwen -p` does not, so those
+	// still wait out the window.
+	{"SessionEnd", "hook-session-end", ""},
+}
+
+// qwenRetiredEvents are hooks deja used to write for qwen and no longer does,
+// by event and subcommand. The PostToolUse fix pair fired only after a tool
+// that succeeded, so it looked up a repair for commands that did not need one
+// and stayed quiet for the ones that did; leaving it behind would keep that
+// cost on every green command.
+var qwenRetiredEvents = map[string]string{"PostToolUse": "hook-tool-after"}
+
+func installQwenAuto(exe string, uninstall bool) (installResult, error) {
+	exe = hookExeFor(exe, uninstall)
+	path := filepath.Join(sources.QwenConfigDir(), "settings.json")
+	var res installResult
+	for i, h := range qwenHookWiring {
+		r, err := installSettingsHookRetiring(path, h.Event, h.Matcher, 60000, hookRun(exe, h.Sub), uninstall, qwenRetiredEvents)
+		if err != nil {
+			return installResult{}, err
+		}
+		// What the target reports is the first change made, the way the other
+		// multi-write targets do: "unchanged" from a later event must not
+		// overwrite the first one's "updated".
+		if i == 0 || (res.Action == "unchanged" && r.Action != "unchanged") {
+			res = r
+		}
+	}
+	return res, nil
+}
+
+// installSettingsHook merges one hook entry into a settings.json that the
+// host also uses for everything else, leaving the rest of the file alone.
+func installSettingsHook(path, event, matcher string, timeout int, exe string, uninstall bool) (installResult, error) {
+	return installSettingsHookCmd(path, event, matcher, timeout, hookRun(exe, "hook-context"), uninstall)
+}
+
+func installSettingsHookCmd(path, event, matcher string, timeout int, cmd string, uninstall bool) (installResult, error) {
+	return installSettingsHookRetiring(path, event, matcher, timeout, cmd, uninstall, nil)
+}
+
+// installSettingsHookRetiring also drops deja hooks this harness no longer
+// uses: under each event in retire, the entries running that subcommand, or
+// every deja entry when it is "". Without it a generator fix ships and the
+// old, dead entry keeps firing next to the new one for everyone who installed
+// before.
+func installSettingsHookRetiring(path, event, matcher string, timeout int, cmd string, uninstall bool, retire map[string]string) (installResult, error) {
+	old, err := readConfig(path)
+	if err != nil {
+		return installResult{}, err
+	}
+	var root map[string]any
+	// A settings file carrying comments cannot be rewritten without losing
+	// them, and a hook entry is an element in an event array rather than a key
+	// in an object, so the text path the MCP writers take does not reach here
+	// (#2744). What it can do is answer honestly: read the file with its
+	// comments blanked, and when there is nothing of deja's to change, say
+	// unchanged rather than refuse a file it was never going to touch.
+	jsonc := configIsJSONC(old)
+	source := old
+	if jsonc {
+		source = []byte(jsoncToJSON(string(old)))
+	}
+	if len(bytes.TrimSpace(source)) == 0 {
+		root = map[string]any{}
+	} else if err := json.Unmarshal(source, &root); err != nil {
+		return installResult{}, configParseError(path, err)
+	}
+	before := ""
+	if jsonc {
+		b, err := json.Marshal(root)
+		if err != nil {
+			return installResult{}, err
+		}
+		before = string(b)
+	}
+	hooks, _ := root["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+		root["hooks"] = hooks
+	}
+	for name, sub := range retire {
+		if name == event && sub == "" {
+			continue
+		}
+		old, _ := hooks[name].([]any)
+		var survivors []any
+		for _, entryAny := range old {
+			entry, _ := entryAny.(map[string]any)
+			if entry != nil && sub == "" && dejaHookEntry(entry) {
+				continue
+			}
+			if entry != nil && sub != "" && entryHasCommand(entry, "deja "+sub) {
+				continue
+			}
+			survivors = append(survivors, entryAny)
+		}
+		if len(survivors) == 0 {
+			delete(hooks, name)
+		} else {
+			hooks[name] = survivors
+		}
+	}
+	entries, _ := hooks[event].([]any)
+	var kept []any
+	found := false
+	for _, entryAny := range entries {
+		entry, _ := entryAny.(map[string]any)
+		if entry != nil && entryHasCommand(entry, cmd) {
+			if uninstall {
+				continue
+			}
+			// Take the entry over rather than leaving it as it was: an install
+			// from a new binary path, or from a version that gained a field,
+			// has to update ours in place or the change never reaches anyone
+			// who already had it. Only the first, for the same reason as
+			// above: a doubled entry is a hook that runs twice.
+			if found {
+				continue
+			}
+			found = true
+			adoptCodexHookEntry(entry, cmd, event)
+			// The timeout too. Qwen and gemini read it in milliseconds, and the
+			// 10 an older deja wrote kills the hook ten milliseconds in — which
+			// looks exactly like a harness with no hooks. Adopting the entry
+			// without this left everyone who installed before the fix with a
+			// hook that could never answer.
+			adoptHookTimeout(entry, cmd, timeout)
+		}
+		kept = append(kept, entryAny)
+	}
+	if !uninstall && !found {
+		h := map[string]any{"type": "command", "command": cmd, "timeout": timeout}
+		// The same line the adopt path above sets. Setting it only there meant
+		// a first install wrote the entry without it and a second install
+		// added it, so whoever installed once never saw the status line their
+		// harness would have shown while the hook ran — and the two installs
+		// produced different files, which is its own trap.
+		if msg := hookStatusMessage(event); msg != "" {
+			h["statusMessage"] = msg
+		}
+		entry := map[string]any{"hooks": []any{h}}
+		if matcher != "" {
+			entry["matcher"] = matcher
+		}
+		kept = append(kept, entry)
+	}
+	if len(kept) == 0 {
+		delete(hooks, event)
+	} else {
+		hooks[event] = kept
+	}
+	if len(hooks) == 0 {
+		delete(root, "hooks")
+	}
+	if jsonc {
+		after, err := json.Marshal(root)
+		if err != nil {
+			return installResult{}, err
+		}
+		if string(after) == before {
+			// Nothing of deja's here either way: leave the reader's comments
+			// where they are and report the truth.
+			return installResult{Path: path, Action: "unchanged"}, nil
+		}
+		return installResult{}, fmt.Errorf("%s: deja cannot edit hooks in a file that carries comments — add or remove the hook by hand, or take the comments out", path)
+	}
+	next, err := marshalConfigLike(old, root)
+	if err != nil {
+		return installResult{}, err
+	}
+	next = append(next, '\n')
+	a, err := writeIfChanged(path, old, next)
+	return installResult{Path: path, Action: a}, err
+}
+
+// kimiHookMarker identifies our block in a config the user also edits by
+// hand. Kimi keeps hooks in config.toml as an array of tables, so removal
+// cannot key on a table name the way the MCP block does — several [[hooks]]
+// entries are legal and only one of them is ours.
+const kimiHookMarker = "# deja: auto-recall (managed by `deja install kimi-auto`)"
+
+// Kimi Code's config is TOML, not JSON, and the entry is a flat table rather
+// than the nested matcher/hooks shape Claude uses.
+//
+// Measured on 0.28.1, by reading the requests it sent: UserPromptSubmit is the
+// only event whose output reaches the model, and it takes the hook's plain
+// stdout — structured output carries permission decisions and nothing else. A
+// SessionStart hook runs and its output goes nowhere; PreToolUse can block a
+// tool but not add to it; PostToolUse and PostToolUseFailure are fire and
+// forget. So the session digest rides the first prompt instead of a
+// session-start channel, and hook-context --once is what keeps it to one.
+//
+// Several UserPromptSubmit hooks are allowed: kimi runs them all and joins
+// their output, each in its own <hook_result> block.
+func installKimiAuto(exe string, uninstall bool) (installResult, error) {
+	path := filepath.Join(sources.KimiConfigDir(), "config.toml")
+	old, next, err := kimiHooksUpdate(path, hookExeFor(exe, uninstall), uninstall)
+	if err != nil {
+		return installResult{}, err
+	}
+	a, err := writeIfChanged(path, old, next)
+	return installResult{Path: path, Action: a}, err
+}
+
+// kimiHooksUpdate is installKimiAuto without the write.
+func kimiHooksUpdate(path, exe string, uninstall bool) (old, next []byte, err error) {
+	old, err = readConfig(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !uninstall {
+		if err := tomlInlineKey(lfText(old), "[[hooks]]"); err != nil {
+			return nil, nil, configParseError(path, err)
+		}
+	}
+	s := strings.TrimRight(removeKimiHookBlock(removeUnmarkedKimiDejaHooks(lfText(old), exe)), "\n")
+	if !uninstall {
+		var block []string
+		for _, h := range kimiHooks {
+			c := hookRun(exe, h.args...)
+			if h.matcher == "" {
+				block = append(block, kimiHookEntry(h.event, c))
+			} else {
+				block = append(block, kimiHookEntryMatching(h.event, h.matcher, c))
+			}
+		}
+		if s != "" {
+			s += "\n\n"
+		}
+		s += strings.Join(block, "\n")
+	} else if s != "" {
+		s += "\n"
+	}
+	return old, []byte(s), nil
+}
+
+// kimiHooks is what kimi-auto wires into config.toml.
+//
+// The digest and the per-prompt block both ride UserPromptSubmit.
+// Compaction throws away what the session was shown, and the list that stops
+// those blocks repeating has to go with it. Kimi waits for PreCompact before
+// it compacts, so the session is read there from wire.jsonl and its packet
+// rides the next prompt. The payload names only the session, hence --harness.
+// SessionEnd: the session is over, so its live stamp goes, and the next
+// session's MCP recall can answer with it now rather than in twenty minutes.
+// Kimi Code 2.2 fires it only when a session is closed, and `kimi -p` exits
+// without closing one, so a finished print run stayed hidden for the whole
+// window (#5145). Stop ends every turn, print mode's last one included, so it
+// clears the stamp too; the next turn's UserPromptSubmit stamps again. A turn
+// that opens without a prompt — a background task's notice — or one a
+// sub-agent's Stop cleared mid-way is stamped again by PreToolUse just before
+// it calls deja's MCP tool, so recall still leaves the asking session out.
+// A failed command's fix pair: Kimi fires PostToolUse(Failure) and drops what
+// they print, so the pair waits for the session's next prompt
+// (hook_deferred.go). The payload is snake_case with the shell tool named
+// Bash and the failure under `error` (0.28.1 toHookInputData,
+// notifyPostToolUse). The line about a file before Kimi edits it:
+// runPreToolUse keeps only a block's reason, so the line waits for the next
+// prompt too, with the edit made by then. The matcher is a regex tested
+// unanchored, hence the anchors.
+var kimiHooks = []struct {
+	event, matcher string
+	args           []string
+}{
+	{"UserPromptSubmit", "", []string{"hook-context", "--plain", "--once"}},
+	{"UserPromptSubmit", "", []string{"hook-prompt", "--plain"}},
+	{"PreCompact", "", []string{"hook-precompact", "--harness", "kimi"}},
+	{"SessionEnd", "", []string{"hook-session-end"}},
+	{"Stop", "", []string{"hook-session-end"}},
+	{"PreToolUse", "^mcp__deja__", []string{"hook-mcp-call"}},
+	{"PostToolUse", "Bash", []string{"hook-tool-after", "--defer"}},
+	{"PostToolUseFailure", "Bash", []string{"hook-tool-after", "--defer"}},
+	{"PreToolUse", "^(Edit|Write)$", []string{"hook-tool", "--defer"}},
+}
+
+// removeUnmarkedKimiDejaHooks drops a [[hooks]] table without deja's marker
+// that is exactly one deja writes: the same event and matcher, deja's own hook
+// line from any path, timeout 30, nothing else. Kimi Code's login and logout
+// write config.toml back from its parsed form, which keeps the tables and
+// drops every comment, the markers with them. Keyed on the marker alone,
+// uninstall then left every hook running a deja-hook it had deleted, and
+// install added a second set beside them. A rule the reader wrote around deja's
+// hook differs in one of those and stays.
+func removeUnmarkedKimiDejaHooks(s, exe string) string {
+	lines := strings.Split(s, "\n")
+	code := tomlCodeLines(s)
+	var out []string
+	for i := 0; i < len(lines); {
+		if strings.TrimSpace(tomlCode(code[i])) != "[[hooks]]" || i > 0 && strings.TrimSpace(lines[i-1]) == kimiHookMarker {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+		// The table ends at the next header or comment, as deja's marked block
+		// does: a note the reader wrote above their next hook is theirs.
+		end := i + 1
+		for end < len(lines) {
+			t := strings.TrimSpace(code[end])
+			if strings.HasPrefix(t, "[") || strings.HasPrefix(t, "#") {
+				break
+			}
+			end++
+		}
+		if !kimiTableIsDejas(code[i+1:end], exe) {
+			out = append(out, lines[i:end]...)
+			i = end
+			continue
+		}
+		// The table and the blank lines after it; a comment the reader wrote
+		// above the next hook stays.
+		for end < len(lines) && strings.TrimSpace(lines[end]) == "" {
+			end++
+		}
+		i = end
+	}
+	return strings.Join(out, "\n")
+}
+
+// kimiLegacyHooks are lines an older kimi-auto wrote: PreCompact ran
+// without --harness before #4793.
+var kimiLegacyHooks = []struct {
+	event, matcher string
+	args           []string
+}{
+	{"PreCompact", "", []string{"hook-precompact"}},
+}
+
+func kimiTableIsDejas(body []string, exe string) bool {
+	keys := map[string]string{}
+	for _, line := range body {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		k, v, ok := tomlLineKeyValue(line)
+		// An inline comment is the reader's, and the table with it.
+		if !ok || strings.TrimSpace(tomlCode(line)) != strings.TrimSpace(line) {
+			return false
+		}
+		if u, err := strconv.Unquote(v); err == nil {
+			v = u
+		} else if len(v) >= 2 && v[0] == '\'' && v[len(v)-1] == '\'' {
+			v = v[1 : len(v)-1]
+		}
+		keys[k] = v
+	}
+	if keys["timeout"] != "30" {
+		return false
+	}
+	for _, h := range append(kimiHooks, kimiLegacyHooks...) {
+		want := 3
+		if h.matcher != "" {
+			want = 4
+		}
+		if len(keys) == want && keys["event"] == h.event && keys["matcher"] == h.matcher &&
+			hookCommandKindOf(keys["command"], hookRun(exe, h.args...)) == hookDejas {
+			return true
+		}
+	}
+	return false
+}
+
+// installKimiMCP writes mcp.json. Kimi Code 2.2 reads only `enabled` on the
+// entry, so a "disabled": true kept from the reader is not called off.
+func installKimiMCP(exe string, uninstall bool) (installResult, error) {
+	path := filepath.Join(sources.KimiConfigDir(), "mcp.json")
+	res, err := installMCPJSON(path, exe, uninstall)
+	if err == nil && !uninstall && !dejaEntrySwitchedOff("kimi", path) {
+		res.Note = dropNotePart(res.Note, switchedOffNote)
+	}
+	return res, err
+}
+
+// kimiAutoPreflight runs the refusals of kimi-auto's config.toml and tui.toml
+// halves before mcp.json is written: a read-only one was refused after the
+// files before it had been written, and the target was left half wired.
+func kimiAutoPreflight(exe string, uninstall bool) error {
+	// The launcher path the writers will name, without writing it yet; they
+	// fall back to the binary when the launcher cannot be written, so a file
+	// that needs no change under either is not refused.
+	exes := []string{exe}
+	if p := dejaLauncherPath(); p != "" && !uninstall {
+		exes = []string{p, exe}
+	}
+	path := filepath.Join(sources.KimiConfigDir(), "config.toml")
+	var refusal error
+	for _, e := range exes {
+		old, next, err := kimiHooksUpdate(path, e, uninstall)
+		if err != nil {
+			return err
+		}
+		if refusal = writableIfChanged(path, old, next); refusal == nil {
+			break
+		}
+	}
+	if refusal != nil {
+		return refusal
+	}
+	// Not on the way out: uninstall runs the plain kimi target too, which
+	// removes mcp.json whatever this says.
+	if uninstall {
+		return nil
+	}
+	tui := filepath.Join(sources.KimiConfigDir(), "tui.toml")
+	for _, e := range exes {
+		cmd := hookRun(e, "statusline")
+		old, next, _, err := tomlStatuslineUpdate(tui, "status_line", kimiStatuslineBlock(cmd), cmd, false)
+		if err != nil {
+			return err
+		}
+		if next == nil {
+			return nil
+		}
+		if refusal = writableIfChanged(tui, old, next); refusal == nil {
+			return nil
+		}
+	}
+	return refusal
+}
+
+// writableIfChanged is the read-only refusal writeIfChanged would give, asked
+// before anything is written.
+func writableIfChanged(path string, old, next []byte) error {
+	next = matchFinalNewline(old, matchLineEndings(old, next))
+	if bytes.Equal(old, next) {
+		return nil
+	}
+	return configWritable(path)
+}
+
+// kimiHookEntry is one marked block. Every block carries the marker, so
+// removeKimiHookBlock takes them all and leaves a hand-written hook alone.
+func kimiHookEntry(event, command string) string {
+	return kimiHookMarker + "\n[[hooks]]\nevent = " + strconv.Quote(event) +
+		"\ncommand = " + strconv.Quote(command) + "\ntimeout = 30\n"
+}
+
+func kimiHookEntryMatching(event, matcher, command string) string {
+	return kimiHookMarker + "\n[[hooks]]\nevent = " + strconv.Quote(event) +
+		"\nmatcher = " + strconv.Quote(matcher) +
+		"\ncommand = " + strconv.Quote(command) + "\ntimeout = 30\n"
+}
+
+// removeKimiHookBlock drops our marked entry and nothing else: the next table
+// header ends it, so a hand-written [[hooks]] below survives.
+func removeKimiHookBlock(s string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	for i := 0; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != kimiHookMarker {
+			out = append(out, lines[i])
+			continue
+		}
+		i++ // skip the marker
+		if i < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[i]), "[[hooks]]") {
+			i++
+		}
+		// deja's block ends at the next table header or the next comment. It
+		// writes no comments inside its own block, so a `#` line is always
+		// someone else's — running past one deleted the note a user had
+		// written above their next hook, and swallowed the marker of a second
+		// deja block, leaving that block behind unmarked and running (#1699).
+		for i < len(lines) {
+			t := strings.TrimSpace(lines[i])
+			if strings.HasPrefix(t, "[") || strings.HasPrefix(t, "#") {
+				break
+			}
+			i++
+		}
+		i-- // the loop's own i++ steps onto the next table header
+	}
+	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
+}
+
+// dejaHookEntry reports whether a settings.json hook entry runs deja. Used to
+// retire wiring written by an older version under an event we abandoned.
+func dejaHookEntry(entry map[string]any) bool {
+	inner, _ := entry["hooks"].([]any)
+	for _, h := range inner {
+		m, _ := h.(map[string]any)
+		cmd, _ := m["command"].(string)
+		// Any deja subcommand counts: the point is to find wiring we wrote,
+		// whatever the old binary called.
+		// Both tool subcommands are spelled out: the match wants the whole
+		// token, so "hook-tool" does not find "hook-tool-after".
+		for _, sub := range []string{"hook-context", "hook-prompt", "hook-precompact", "hook-goose", "hook-antigravity", "hook-codewhale",
+			"hook-tool", "hook-tool-after", "hook-spawn", "hook-session-end"} {
+			if isDejaHookCommand(cmd, "deja "+sub) {
+				return true
+			}
+		}
+	}
+	return false
+}

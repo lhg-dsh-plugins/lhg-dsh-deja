@@ -1,0 +1,313 @@
+package main
+
+import (
+	"io"
+	"math"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/vshulcz/deja-vu/internal/digest"
+	"github.com/vshulcz/deja-vu/internal/index"
+	"github.com/vshulcz/deja-vu/internal/model"
+	"github.com/vshulcz/deja-vu/internal/policy"
+	"github.com/vshulcz/deja-vu/internal/search"
+)
+
+// tuiRow is one card in the list.
+type tuiRow struct {
+	s     model.Session
+	snips []string // the matched lines, best first
+
+	section string // a heading drawn over this card, when it starts a group
+	partial bool   // a relevance hit that holds only some of the words, under strict ones
+	file    string // the changed file a card behind the diff was found through
+}
+
+// tuiDetail is what the preview and the reader need beyond the index row:
+// the whole session, and the line it concluded with.
+type tuiDetail struct {
+	full        model.Session
+	conclusions []string
+	story       tuiStory
+	gone        bool
+	err         error
+}
+
+func sessionKey(s model.Session) string { return s.Harness + "\x00" + s.ID }
+
+// tuiPage is how many hits the list reads at a time, and tuiMoreAhead how
+// close to its end the selection gets before the next page is asked for.
+const (
+	tuiPage      = 80
+	tuiMoreAhead = 10
+)
+
+// tuiSearch runs a query the way `deja search` does, minus everything that
+// prints: the tier ladder, the trust policy, the ranking. The rerank and the
+// semantic fallback are left out because they are the slow part and the list
+// is redrawn on every key.
+func tuiSearch(dir string, o search.Options) ([]search.Hit, error) {
+	hits, _, err := tuiSearchPage(dir, o)
+	return hits, err
+}
+
+// tuiSearchPage is tuiSearch for the first o.Limit hits, and how many
+// sessions matched in all. Retrieval reads only what can reach those hits, the
+// way a paged `deja search` does.
+func tuiSearchPage(dir string, o search.Options) ([]search.Hit, int, error) {
+	if o.Limit <= 0 || o.All {
+		return tuiSearchRead(dir, o)
+	}
+	w := o
+	w.Window, w.Activation = o.Limit, policy.ActivationSearch
+	hits, total, err := tuiSearchRead(dir, w)
+	// A short page with sessions left unread means the pool held few that
+	// the text bears out, which a quoted phrase over two common words does:
+	// one card over "1,206 sessions" where five said it. The page is read
+	// whole then, the way it was before it was paged.
+	if err == nil && len(hits) < o.Limit && total > len(hits) {
+		return tuiSearchRead(dir, o)
+	}
+	return hits, total, err
+}
+
+// tuiSearchRead is one search of the list, read as o says.
+func tuiSearchRead(dir string, o search.Options) ([]search.Hit, int, error) {
+	result, err := tuiIndexSearch(dir, o, io.Discard)
+	if err != nil {
+		return nil, 0, err
+	}
+	ss, _ := policyFilterSessionsCounted(policy.ActivationSearch, search.WithoutIgnored(result.Sessions))
+	switch result.Tier {
+	case search.TierError:
+		hits := search.ErrorHits(ss, o.Query)
+		if o.Sort == search.SortDate {
+			search.ByDate(hits)
+		}
+		return hits, len(hits), nil
+	case search.TierRelevance:
+		hits := markStrictHits(search.RelevanceHitsWeighted(ss, index.RelevanceMatchTerms(o.Query), result.TermIDF), result)
+		if o.Sort == search.SortDate {
+			search.ByDate(hits)
+		}
+		return hits, len(hits), nil
+	}
+	o.Tier = result.Tier
+	o.Unread = result.Unread
+	if result.Neighbour || result.Stemmed {
+		o.Stemmed = true
+		o.FuzzyVariants = result.Variants
+	} else if result.Fuzzy {
+		o.Fuzzy = true
+		o.FuzzyVariants = result.Variants
+	}
+	if result.Tier == search.TierClose && o.FuzzyVariants == nil {
+		o.FuzzyVariants = result.Variants
+	}
+	d, err := search.RunDetailed(ss, o)
+	return d.Hits, d.Total, err
+}
+
+// tuiIndexSearch is the index search the list runs; a test counts what it
+// reads.
+var tuiIndexSearch = index.SearchWithRecoveryDetailed
+
+// appendNewHits is the list extended by a longer read of the same search,
+// up to len(got) hits: what is already listed keeps its place, and the hits it
+// does not hold follow in their order. A larger read ranks a larger pool, so
+// it can place a listed hit lower than the page it came on; that one stays.
+func appendNewHits(have, got []search.Hit) []search.Hit {
+	seen := make(map[string]bool, len(have))
+	out := append(make([]search.Hit, 0, len(got)), have...)
+	for _, h := range have {
+		seen[sessionKey(h.Session)] = true
+	}
+	for _, h := range got {
+		if len(out) >= len(got) {
+			break
+		}
+		if !seen[sessionKey(h.Session)] {
+			seen[sessionKey(h.Session)] = true
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// tuiRecent is the home list: the newest sessions in scope, under whatever
+// filters the box holds.
+func tuiRecent(dir string, o search.Options, n int) ([]model.Session, int, error) {
+	o.Query = ""
+	ss, total, err := index.RecentMatchingCounted(dir, n, o)
+	if err != nil {
+		return nil, 0, err
+	}
+	kept, hidden := policyFilterSessionsCounted(policy.ActivationSearch, ss)
+	return kept, total - hidden, nil
+}
+
+// tuiKept lists the sessions whose agent has deleted its own copy, newest
+// first. It stats every transcript, so it runs once, off the main loop.
+func tuiKept(dir string) ([]model.Session, error) {
+	ss, _, err := index.RecentMatchingCounted(dir, 0, search.Options{})
+	if err != nil {
+		return nil, err
+	}
+	ss, _ = policyFilterSessionsCounted(policy.ActivationSearch, ss)
+	var out []model.Session
+	for _, s := range ss {
+		if !strings.HasPrefix(s.Project, "imported:") && transcriptGone(s) {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// tuiLoadDetail reads one session whole and pulls out what it concluded.
+func tuiLoadDetail(dir string, s model.Session) *tuiDetail {
+	full, ok, err := index.FindByIdentity(dir, s.Harness, s.ID)
+	d := &tuiDetail{full: s, err: err}
+	if ok {
+		d.full = full
+	}
+	d.conclusions = tuiConclusions(d.full, 3)
+	d.story = tuiStoryOf(d.full)
+	d.gone = !strings.HasPrefix(s.Project, "imported:") && transcriptGone(d.full)
+	return d
+}
+
+// tuiConclusions is the session's answer in a line or three: the same
+// extraction the recap uses, cut to whole sentences that fit a card.
+func tuiConclusions(s model.Session, n int) []string {
+	var out []string
+	for _, line := range digest.SubstantialConclusions(s, 1200, n*3) {
+		line = strings.Join(strings.Fields(line), " ")
+		line = strings.TrimLeft(line, "-*• ")
+		if len([]rune(line)) < 12 {
+			continue
+		}
+		dup := false
+		for _, o := range out {
+			if o == line {
+				dup = true
+			}
+		}
+		if !dup {
+			out = append(out, line)
+		}
+		if len(out) >= n {
+			break
+		}
+	}
+	return out
+}
+
+// tuiAgentCounts counts sessions per harness, biggest first.
+func tuiAgentCounts(ss []model.Session) []agentCount {
+	m := map[string]int{}
+	for _, s := range ss {
+		m[s.Harness]++
+	}
+	out := make([]agentCount, 0, len(m))
+	for h, n := range m {
+		out = append(out, agentCount{h, n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].n != out[j].n {
+			return out[i].n > out[j].n
+		}
+		return out[i].h < out[j].h
+	})
+	return out
+}
+
+type agentCount struct {
+	h string
+	n int
+}
+
+// daysBefore counts calendar days from t back from now, in now's zone: 0 is
+// today, 1 yesterday. A time ahead of now counts as today.
+func daysBefore(t, now time.Time) int {
+	t = t.In(now.Location())
+	day := func(x time.Time) time.Time {
+		return time.Date(x.Year(), x.Month(), x.Day(), 12, 0, 0, 0, now.Location())
+	}
+	return max(0, int(math.Round(day(now).Sub(day(t)).Hours()/24)))
+}
+
+// dayGroup is the date heading a home card goes under.
+func dayGroup(t, now time.Time) string {
+	if t.IsZero() {
+		return "Earlier"
+	}
+	switch d := daysBefore(t, now); {
+	case d == 0:
+		return "Today"
+	case d == 1:
+		return "Yesterday"
+	case d < 7:
+		return "This week"
+	}
+	return "Earlier"
+}
+
+// tuiAgo is a session's date on the cards, the preview and the reader:
+// relative within the week, a short date after. Past the first hour it counts
+// calendar days, the way the home list's day headings do, so a card under
+// Yesterday says yesterday.
+func tuiAgo(t, now time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	d := now.Sub(t)
+	if d < 0 {
+		return t.In(now.Location()).Format("Jan 2")
+	}
+	switch days := daysBefore(t, now); {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return num(int(d.Minutes())) + "m ago"
+	case days == 0:
+		return num(int(d.Hours())) + "h ago"
+	case days == 1:
+		return "yesterday"
+	case days < 7:
+		return num(days) + "d ago"
+	}
+	t = t.In(now.Location())
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("Jan 2 2006")
+}
+
+// tuiSnippets is a hit's matched lines, whitespace folded, repeats dropped.
+func tuiSnippets(h search.Hit) []string {
+	var out []string
+	for _, sn := range h.Snippets {
+		sn = strings.Join(strings.Fields(sn), " ")
+		if sn == "" {
+			continue
+		}
+		dup := false
+		for _, o := range out {
+			dup = dup || sameLine(o, sn)
+		}
+		if !dup {
+			out = append(out, sn)
+		}
+	}
+	return out
+}
+
+// sameLine says two lines open the same way, which is how a snippet that
+// repeats the card's headline gives itself away.
+func sameLine(a, b string) bool {
+	ra := []rune(strings.ToLower(strings.Join(strings.Fields(a), " ")))
+	rb := []rune(strings.ToLower(strings.Join(strings.Fields(b), " ")))
+	n := min(len(ra), len(rb), 40)
+	return n > 0 && string(ra[:n]) == string(rb[:n])
+}

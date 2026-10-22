@@ -1,0 +1,333 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Only the ClawHub job runs on dispatch; see clawhub-dispatch below.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish to ClawHub, e.g. v0.21.3
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  goreleaser:
+    name: GitHub release + Homebrew
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      # The release opens a discussion (#1559), and GitHub answers a token that
+      # may not create one with a 404 naming the category instead of the
+      # permission: "Discussion could not be created. Make sure you passed a
+      # valid category name." The category was always valid — v0.19.0 published
+      # its binaries and then failed the run on this line.
+      discussions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          cache: false
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+
+      # The release page opens with the changelog section for this version, so
+      # a reader arriving from Homebrew or npm learns what the release is
+      # before being told how to install it.
+      - name: Read this version's changelog section
+        run: |
+          {
+            echo 'RELEASE_LEDE<<RELEASE_LEDE_EOF'
+            go run ./scripts/relnotes "${GITHUB_REF_NAME#v}"
+            echo
+            echo RELEASE_LEDE_EOF
+          } >> "$GITHUB_ENV"
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-checksums: dist/checksums.txt
+
+      # One bundle per platform: the .mcpb manifest has no architecture
+      # selector, so a single universal file would be wrong for half of Linux.
+      - name: Pack MCP bundles
+        run: |
+          go run ./scripts/mcpb -version "${GITHUB_REF_NAME#v}" -in dist -out dist/mcpb
+          go run ./scripts/mcpb -registry -version "${GITHUB_REF_NAME#v}" -out dist/mcpb
+
+      # Kimi Code installs a plugin from a local path, a zip URL or a GitHub
+      # repository — and the repository form looks for the manifest at the root
+      # or in one top-level directory, which a monorepo does not have. The zip
+      # is how extensions/kimi reaches a Kimi user.
+      - name: Pack the Kimi Code plugin
+        run: |
+          cd extensions/kimi
+          zip -qr "$GITHUB_WORKSPACE/dist/kimi-deja.zip" . -x 'test/*' 'package.json'
+          unzip -l "$GITHUB_WORKSPACE/dist/kimi-deja.zip" | grep -q kimi.plugin.json
+
+      - name: Attach the Kimi Code plugin to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/kimi-deja.zip --clobber
+
+      # Regenerate the Windows manifests from the checksums this run produced,
+      # and attach them so the scoop and winget submissions have a canonical
+      # file even before the repository catches up.
+      - name: Pin Windows manifests
+        run: go run ./scripts/pinmanifests -version "${GITHUB_REF_NAME#v}" -checksums dist/checksums.txt
+
+      # After the pin, so the manifest inside says this release's version: the
+      # Spec Kit catalog entry names that version, the zip's URL and its sha256.
+      - name: Pack the Spec Kit extension
+        run: |
+          cd extensions/spec-kit
+          zip -qr "$GITHUB_WORKSPACE/dist/deja-spec-kit.zip" .
+          unzip -p "$GITHUB_WORKSPACE/dist/deja-spec-kit.zip" extension.yml | grep -qx "  version: \"${GITHUB_REF_NAME#v}\""
+          echo "deja-spec-kit.zip sha256 $(sha256sum "$GITHUB_WORKSPACE/dist/deja-spec-kit.zip" | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach the Spec Kit extension to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/deja-spec-kit.zip --clobber
+
+      - name: Attach the manifests to the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            packaging/scoop/deja-vu.json \
+            packaging/winget/vshulcz.deja-vu.installer.yaml \
+            packaging/winget/vshulcz.deja-vu.locale.en-US.yaml --clobber
+
+      - name: Attach MCP bundles to the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/mcpb/*.mcpb --clobber
+
+  npm:
+    name: npm packages
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Download release archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          gh release download "${GITHUB_REF_NAME}" --dir dist --pattern 'deja-vu_*'
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/release-npm.mjs "${GITHUB_REF_NAME#v}" dist
+
+  # winget has no bot proposing version bumps the way Scoop's checkver does, so
+  # without this every release stays behind there until someone opens a pull
+  # request by hand (0.21.0 was listed while 0.21.3 shipped). Komac reads the
+  # previous version's manifests and swaps in this release's zips and hashes.
+  # WINGET_TOKEN is a classic PAT with public_repo; Komac opens the PR from
+  # that account's winget-pkgs fork.
+  winget:
+    name: winget-pkgs pull request
+    if: github.event_name == 'push' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    permissions: {}
+    env:
+      KOMAC_VERSION: 2.16.0
+      KOMAC_SHA256: 7d2707fa6210f2789a3702de49fbd150b736dbf426ee0b9bc8e098736f9fd82d
+    steps:
+      - name: Install Komac
+        run: |
+          set -euo pipefail
+          f="komac-${KOMAC_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo "$f" "https://github.com/russellbanks/Komac/releases/download/v${KOMAC_VERSION}/$f"
+          echo "${KOMAC_SHA256}  $f" | sha256sum -c -
+          tar xzf "$f" komac
+          sudo install komac /usr/local/bin/komac
+
+      - name: Open the pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          KOMAC_CREATED_WITH: deja-vu release workflow
+          KOMAC_CREATED_WITH_URL: https://github.com/${{ github.repository }}/blob/main/.github/workflows/release.yml
+        run: |
+          set -euo pipefail
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "::warning::WINGET_TOKEN is not set; winget stays on the previous version"
+            exit 0
+          fi
+          # komac branches from upstream master inside the fork; a fork far
+          # enough behind lacks that commit and komac fails with "Ref cannot
+          # be created" (#4137).
+          if ! owner="$(gh api user --jq .login)" \
+            || ! gh api -X POST "repos/${owner}/winget-pkgs/merge-upstream" -f branch=master >/dev/null; then
+            echo "::warning::could not sync the winget-pkgs fork with upstream"
+          fi
+          v="${GITHUB_REF_NAME#v}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          komac update vshulcz.deja-vu --version "$v" \
+            --urls "$base/deja-vu_${v}_windows_amd64.zip" "$base/deja-vu_${v}_windows_arm64.zip" \
+            --release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
+            --submit
+
+  # ClawHub mints a publish token only for a workflow_dispatch run, and refused
+  # every tag push from v0.21.0 on ("GitHub OIDC workflow requires
+  # workflow_dispatch, got push"). The tag run dispatches this file on the tag
+  # itself, and that run publishes. ClawHub records the commit and ref from the
+  # run's OIDC token, so dispatching on the tag is what makes the listing point
+  # at the released commit.
+  clawhub-dispatch:
+    name: Hand the ClawHub publish to a dispatched run
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: npm
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch release.yml for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f tag="$GITHUB_REF_NAME"
+
+  clawhub:
+    name: ClawHub package
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # ClawHub trusted publishing: the CLI trades the workflow's OIDC token for
+      # a one-package, one-version publish token, so no secret is stored. The
+      # package's trusted-publisher config names this repo and release.yml.
+      id-token: write
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check the tag
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "tag must look like v1.2.3, got: $TAG"; exit 1; }
+
+      # The run's own commit and full ref: ClawHub refuses source metadata that
+      # differs from the OIDC token. A tag older than this job can't be
+      # dispatched on, so republishing one runs on main and packs main's plugin.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      # Same version npm was just given for this package — release-npm.mjs may
+      # have moved it to the next patch of its own line — and the same pinned
+      # binary dependency, so the two registries serve one artifact. npm can
+      # still serve the previous version when this run starts: v0.21.5 read
+      # 0.21.4 here and ClawHub refused it as already published (#4612). So wait
+      # until npm serves this release or later before taking its version.
+      - name: Publish the OpenClaw plugin
+        run: |
+          set -euo pipefail
+          want="${TAG#v}"
+          version=""
+          for try in $(seq 1 30); do
+            live="$(npm view @vshulcz/openclaw-deja version --prefer-online 2>/dev/null || true)"
+            if [ -n "$live" ] && [ "$(printf '%s\n%s\n' "$want" "$live" | sort -V | head -n1)" = "$want" ]; then
+              version="$live"
+              break
+            fi
+            echo "npm serves ${live:-nothing} for @vshulcz/openclaw-deja, waiting for $want (try $try/30)"
+            if [ "$try" -lt 30 ]; then sleep 20; fi
+          done
+          if [ -z "$version" ]; then
+            echo "::error::npm did not serve @vshulcz/openclaw-deja $want or later within 10 minutes"
+            exit 1
+          fi
+          # A rerun of a release ClawHub already has would fail on the
+          # duplicate and stop the skill step after it.
+          live="$(curl -fsS 'https://clawhub.ai/api/v1/packages/%40vshulcz%2Fopenclaw-deja' | jq -r '.package.latestVersion // empty' || true)"
+          if [ "$live" = "$version" ]; then
+            echo "@vshulcz/openclaw-deja $version is already on ClawHub"
+            exit 0
+          fi
+          out="$(mktemp -d)/openclaw"
+          cp -R extensions/openclaw "$out"
+          node -e '
+            const fs = require("fs"), [p, v, d] = process.argv.slice(1);
+            const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+            pkg.version = v;
+            if (pkg.dependencies?.["@vshulcz/deja-vu"]) pkg.dependencies["@vshulcz/deja-vu"] = "^" + d;
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+          ' "$out/package.json" "$version" "${TAG#v}"
+          node scripts/release-clawhub-auth.mjs @vshulcz/openclaw-deja "$version"
+          npx -y clawhub@0.23.3 package publish "$out" \
+            --family code-plugin \
+            --name @vshulcz/openclaw-deja \
+            --version "$version" \
+            --source-repo "$GITHUB_REPOSITORY" \
+            --source-commit "$GITHUB_SHA" \
+            --source-ref "$GITHUB_REF" \
+            --source-path extensions/openclaw \
+            --changelog "deja-vu $TAG" \
+            --no-input
+
+      # Trusted publishing covers packages only: the token mint 404s on a skill
+      # name and skill publish takes a user API token (clawhub 0.23.3), so the
+      # skill needs a stored one. Without it deja-search sat at 0.21.0 (#4661).
+      - name: Publish the deja-search skill
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CLAWHUB_TOKEN" ]; then
+            echo "::error::CLAWHUB_TOKEN is not set; deja-search on ClawHub stays behind this release"
+            exit 1
+          fi
+          # Log in first, so a rerun with nothing to publish still checks the
+          # token.
+          export CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub.json"
+          trap 'rm -f "$CLAWHUB_CONFIG_PATH"' EXIT
+          npx -y clawhub@0.23.3 login --token "$CLAWHUB_TOKEN" --no-input
+          version="${TAG#v}"
+          live="$(curl -fsS https://clawhub.ai/api/v1/skills/deja-search | jq -r '.latestVersion.version // empty' || true)"
+          if [ "$live" = "$version" ]; then
+            echo "deja-search $version is already on ClawHub"
+            exit 0
+          fi
+          npx -y clawhub@0.23.3 skill publish skills/deja-search \
+            --slug deja-search \
+            --version "$version" \
+            --source-repo "$GITHUB_REPOSITORY" \
+            --source-commit "$GITHUB_SHA" \
+            --source-ref "$GITHUB_REF" \
+            --source-path skills/deja-search \
+            --changelog "deja-vu $TAG" \
+            --no-input

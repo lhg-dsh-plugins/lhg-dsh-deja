@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — deja-vu docs</title>
+<meta name="description" content="deja is local by design: no network path in indexing or search unless semantic search is on, credentials redacted at index time, and forget/exclude controls.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/privacy.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/privacy.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/privacy.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/privacy.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Privacy — deja-vu docs">
+<meta property="og:description" content="deja is local by design: no network path in indexing or search unless semantic search is on, credentials redacted at index time, and forget/exclude controls.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/privacy.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="Privacy — deja-vu docs">
+<meta name="twitter:description" content="deja is local by design: no network path in indexing or search unless semantic search is on, credentials redacted at index time, and forget/exclude controls.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Privacy", "description": "deja is local by design: no network path in indexing or search unless semantic search is on, credentials redacted at index time, and forget/exclude controls.", "url": "https://vshulcz.github.io/deja-vu/guide/privacy.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/privacy.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-07-19", "dateModified": "2026-10-22"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"Privacy","item":"https://vshulcz.github.io/deja-vu/guide/privacy.html"}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html" aria-current="page">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold"><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>Privacy</h1>
+<p class="pagelede">what is indexed, what is stripped, what never leaves<span class="mins" data-mins></span></p>
+<p>deja indexes credential-bearing histories, so privacy is a first-order concern, not an afterthought.</p>
+<h2>What gets indexed</h2>
+<p>The conversation, and what the agent did while having it: the file paths its tool calls named, the commands it ran, the spans its edits replaced, and what its tools printed. That last part is why redaction matters — command output carries far more credentials than prose does — and every one of these paths goes through the same redaction pass as the conversation itself. Replaced spans are source code from your own files; they are stored so <code>deja restore</code> can hand work back, and they stay on the machine like everything else.</p>
+<p>On every agent whose compaction deja captures (Claude Code, Codex, Qwen, Kimi, Grok, Cursor CLI, opencode, pi and the others in the <a href="https://github.com/vshulcz/deja-vu/blob/main/docs/compaction.md">compaction reference</a>), the index also keeps a bounded packet of the working context captured just before a compaction — the task, conclusions, files and commands of that session, redacted like everything else, for at most 32 session/workspace pairs. It lives in the index manifest, is left out of sync exports, honours excluded projects and <code>DEJA_RECALL=off</code>, and <code>deja forget</code> removes it even before its session has been indexed. See <a href="https://github.com/vshulcz/deja-vu/blob/main/docs/compaction.md">compaction recovery</a>.</p>
+<h2>Local by default</h2>
+<p>Indexing and search have no network path unless you turn on semantic search. The index and its usage sidecar never leave the machine. Network access happens only when you run <code>deja update</code>, <code>deja sync ssh</code>, the <code>doctor</code> version check (which <code>--offline</code> disables), or <code>deja embed</code> — which sends text to the endpoint you configured and is covered below. Once <code>deja embed</code> has built the semantic sidecar, every search and every recall also sends its query to that endpoint, once per call and with secrets masked by the same rules the index uses. The one exception to “when you run”: at most once a day, a command typed at a terminal asks GitHub for the latest release number in the background and says so on stderr when a newer one is out. It sends no session data, hooks, the MCP server and the other commands an agent starts never start it, even under a terminal, and <code>DEJA_OFFLINE=1</code> turns it off, as does <code>DEJA_NO_UPDATE_NOTICE</code> set to any value, which also hides the note a new version prints on its first run.</p>
+<h2>Redaction</h2>
+<p>Secrets are stripped at index time — API keys, JWTs, PEM/PGP private-key blocks, bearer and HTTP Basic auth, provider tokens, <code>scheme://user:pass@host</code> URLs, (since 0.14.2) bare high-entropy values in secret-shaped positions — the value side of any assignment or a token alone on its own line — and (since 0.20.2) a password stated in prose, where nothing separates the name from the value: "the admin password is …". That last one needs the value to carry a digit or a symbol, so a sentence like "the password is wrong" keeps its words. A secret split by terminal color escapes (<code>grep --color</code>, colored loggers), <code>Authorization: Token</code> headers and Slack and Discord webhook URLs are masked too. All of it happens before anything is written. Redaction runs on the full message before any size cap, so a secret straddling the cap boundary can't slip through. Redacted output is what search, MCP recall, share and sync all serve, and <code>deja share</code> also masks home paths, including encoded folder names like <code>-Users-&lt;name&gt;-src</code>, and emails.</p>
+<h2>Control what's kept</h2>
+<ul>
+<li><b>Exclude</b> — <code>~/.config/deja/exclude</code> patterns or <code>DEJA_EXCLUDE_PROJECTS</code> skip projects at index time, and <code>sync export</code> honours them too, so a project excluded later does not leave the machine. Sessions indexed before the pattern existed stay searchable locally until <code>deja index --rebuild</code>; <code>deja index</code> tells you when that is the case. A tree named as one project in <code>~/.config/deja/projects</code> does not override a pattern: a repository excluded by its own name stays out.</li>
+<li><b>Exclude a whole store</b> — a line prefixed <code>harness:</code> in the same file names an agent instead of a project — <code>harness:opencode</code> — and deja neither walks that store nor asks for the tool that would read it. <code>DEJA_EXCLUDE_HARNESSES</code> is the comma-separated form. Store names are exact, not patterns: they are the ones <code>deja sources</code> prints, and both it and <code>deja doctor</code> then report the store as <code>excluded</code> rather than naming a package to install.</li>
+<li><b>Forget</b> — <code>deja forget</code> removes sessions and records a tombstone so they don't come back on the next index; <code>--dry-run</code> to preview, <code>--list</code> to see the tombstones, <code>--unforget &lt;id&gt;</code> to reverse one.</li>
+<li><b>Redaction report</b> — <code>deja stats --redaction</code> shows what was masked, per rule and harness.</li>
+<li><b>Audit what agents received</b> — <code>deja log</code> lists recent recalls and injections; <code>deja log --last</code> prints the exact digest most recently served.</li>
+<li><b>Trust scopes</b> — <code>~/.config/deja/policy.json</code> controls what memory activates where. Per activation path (<code>search</code>, <code>mcp</code>, <code>auto</code>) you allow or deny origins: <code>local</code>, <code>imported</code> (anything synced from another machine), or <code>imported:&lt;group&gt;</code> for synced sessions whose project, on the machine they came from, sits under that top directory. A rule cannot name a peer: each synced record does carry the sending machine's name, but that is the sender's own claim, which nothing verifies. Example — synced sessions stay searchable but never auto-inject: <code>{"activations":{"auto":{"imported":false}}}</code>. <code>DEJA_AUTORECALL_LOCAL_ONLY=1</code> remains an alias for exactly that rule. Receipts and <code>deja log --last</code> name the policy that allowed each injection. <code>deja embed</code> is the one command that sends session text off the machine, and no activation describes that, so it takes the agreement of all three: anything a rule withholds on any path is not embedded, and <code>deja embed</code> reports how many records stayed.</li>
+</ul>
+<p>Full details in the <a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">security model</a>.</p>
+
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

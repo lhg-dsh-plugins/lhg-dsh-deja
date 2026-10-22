@@ -1,0 +1,161 @@
+version: 2
+
+project_name: deja-vu
+
+builds:
+  - id: deja
+    main: ./cmd/deja
+    binary: deja
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+# macOS gets one bundle instead of two: the .mcpb manifest cannot select an
+# architecture, so the two Mach-O binaries are joined before packing.
+universal_binaries:
+  - id: deja-universal
+    ids: [deja]
+    replace: false
+    name_template: deja
+
+archives:
+  - id: default
+    builds:
+      - deja
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      # The CLI-only install unpacks this archive and runs nothing else. warmup
+      # writes the skill too; shipping it here means it can be read, or copied
+      # by hand on a machine where deja cannot write ~/.agents (#1320).
+      - skills/deja-search/SKILL.md
+      # `gemini extensions install <repo-url>` resolves to the release asset for
+      # the platform, unpacks it and reads the manifest from the top of the
+      # archive — so leaving these two behind fails the install outright:
+      # "Configuration file not found at .../gemini-extension.json".
+      - gemini-extension.json
+      - GEMINI.md
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - id: archives
+    artifacts: archive
+    documents:
+      - "${artifact}.spdx.json"
+
+# Keyless cosign signature over the checksum file. The sigstore bundle holds
+# the signature, the certificate and the transparency-log entry in one asset
+# that consumers (and scorecards) verify without keys. cosign 3 ignores
+# --output-signature and --output-certificate, so the old .sig/.pem pair would
+# not be written at all (#4577).
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--yes", "--bundle", "${signature}", "${artifact}"]
+    artifacts: checksum
+
+# The nightly publishes a rolling `nightly` tag. Left visible, it becomes the
+# most recent tag and every version template downstream fails on it.
+#
+# The harness plugins are tagged in this repository too, and their names are not
+# semver: `copilot-plugin-0.19.2` became the newest tag and `goreleaser check`
+# failed on every pull request with "invalid semantic version". The glob covers
+# the ones added since as well, which is the point — a release tag here is
+# `vX.Y.Z` and anything else belongs to something that ships on its own.
+git:
+  ignore_tags:
+    - nightly
+    - "*-plugin-*"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  # Read through the GitHub API rather than git so the author's login is
+  # known. Outside contributors get their name on the line, which is also
+  # the notification that their change shipped; my own lines stay bare.
+  use: github
+  sort: asc
+  format: '{{ .Message }}{{ if and .AuthorUsername (ne .AuthorUsername "vshulcz") }} (@{{ .AuthorUsername }}){{ end }}'
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?:'
+      order: 1
+    - title: Performance
+      regexp: '^perf(\(.+\))?:'
+      order: 2
+    - title: Documentation
+      regexp: '^docs(\(.+\))?:'
+      order: 3
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^test:"
+
+release:
+  # Every release opens a thread people can answer in. The alternative is a
+  # changelog nobody can reply to, and an empty Discussions tab that reads as
+  # an empty room.
+  discussion_category_name: Announcements
+  # What changed goes first. The CHANGELOG section for this version is written
+  # by hand and says what the release is; the generated commit list below it
+  # says which pull requests carried it. Install is the last thing a reader
+  # needs and used to be the first thing on the page — a release page that
+  # opened with `curl … | sh` and never said what was new.
+  #
+  # RELEASE_LEDE is filled by the release workflow from CHANGELOG.md. Empty is
+  # a valid answer: a release cut before its changelog entry lands still ships.
+  header: |
+    {{ envOrDefault "RELEASE_LEDE" "" }}
+  footer: |
+    ## Install
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/vshulcz/deja-vu/main/install.sh | sh
+    go install github.com/vshulcz/deja-vu/cmd/deja@{{ .Tag }}
+    brew install deja-vu
+    ```
+
+# The tap repository (github.com/vshulcz/homebrew-tap) must exist before tagged releases run.
+brews:
+  - name: deja-vu
+    # Publishing the formula needs a PAT with access to vshulcz/homebrew-tap,
+    # because the workflow GITHUB_TOKEN is scoped to this repository. It comes
+    # from the TAP_GITHUB_TOKEN secret below. `brew install deja-vu` resolves
+    # through homebrew-core; the tap is the fallback and stays in step with it.
+    repository:
+      owner: vshulcz
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://vshulcz.github.io/deja-vu/
+    # What people type into `brew search`, which matches names and
+    # descriptions: the old line said neither the agents nor the thing it
+    # searches, so `brew search claude` and `brew search session history`
+    # both missed us.
+    description: Search Claude Code, Codex and Cursor session history locally
+    license: MIT
+
+# nfpms intentionally omitted for now; add .deb/.rpm packaging when distro packages are needed.

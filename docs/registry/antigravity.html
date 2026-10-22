@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Antigravity stores its history — session format</title>
+<meta name="description" content="Where Antigravity writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/antigravity.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Antigravity stores its history — session format">
+<meta property="og:description" content="Where Antigravity writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/antigravity.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Antigravity stores its history — session format">
+<meta name="twitter:description" content="Where Antigravity writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Antigravity writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Antigravity session format","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/antigravity.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/antigravity.html","name":"Antigravity session format","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html" aria-current="page">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Antigravity session format</h1>
+<h2 id="store-and-files">Store and files</h2>
+<p>Antigravity stores transcripts at <code>~/.gemini/antigravity*/brain/&lt;session-id&gt;/.system_generated/logs/transcript.jsonl</code>. The wildcard reflects observed versioned or profile-specific roots. <code>DEJA_ANTIGRAVITY_ROOT</code> replaces root discovery.</p>
+<h2 id="records">Records</h2>
+<p>Each line has a source, content, and creation time:</p>
+<pre><code class="language-json">{&#34;source&#34;:&#34;USER_EXPLICIT&#34;,&#34;created_at&#34;:&#34;2026-07-17T09:00:00Z&#34;,&#34;content&#34;:&#34;&lt;USER_REQUEST&gt;Check the build.&lt;ADDITIONAL_METADATA&gt;{\&#34;cwd\&#34;:\&#34;/work/api\&#34;}&lt;/ADDITIONAL_METADATA&gt;&lt;/USER_REQUEST&gt;&#34;}</code></pre>
+<p><code>USER_EXPLICIT</code> maps to <code>user</code>; other sources except <code>MODEL</code> are ignored. A <code>MODEL</code> line is split by its <code>type</code>: <code>PLANNER_RESPONSE</code> (or no type) is assistant text, <code>RUN_COMMAND</code> and <code>GENERIC</code> give a command record from their <code>Task Description:</code> line, and <code>VIEW_FILE</code>, <code>CODE_ACTION</code> and <code>LIST_DIRECTORY</code> give a file record for the path they name. A planner row&#39;s <code>tool_calls</code> are read too: <code>run_command</code> gives a command record from <code>CommandLine</code> (its <code>Cwd</code> names the project when nothing else does), and <code>view_file</code>, <code>replace_file_content</code> and <code>write_to_file</code> a file record from <code>AbsolutePath</code> or <code>TargetFile</code>. On disk each arg is itself JSON, the quotes included, and is decoded once; a step header naming the same command or file again is not counted twice. The body of a tool step, minus its <code>Created At:</code>/<code>Completed At:</code> header, is kept as tool output. A <code>GENERIC</code> or <code>RUN_COMMAND</code> step whose header says &#34;The command exited with code N.&#34; puts <code>→ exit N</code> on the command it ran: the one the step names, else the only <code>run_command</code> of the planner row before it; a step carries no call id, so with two calls and no name the code is left off (#4530). <code>created_at</code> is RFC 3339. The directory below <code>brain</code> is the session ID. A <code>write_to_file</code> step says only &#34;Created file&#34;, with no diff block, so the call&#39;s <code>CodeContent</code> is the written side, recorded once a <code>CODE_ACTION</code> step with status <code>DONE</code> names the file; a failed step names none and nothing is recorded (#4528).</p>
+<p>The transcript carries no workspace. deja takes the project from the IDE&#39;s <code>cache/conversation_metadata.json</code> (<code>WorkspaceURIs</code>), then from the CLI&#39;s <code>cache/last_conversations.json</code>, and failing both from the deepest directory shared by the absolute paths the session touched; otherwise it records <code>-</code>.</p>
+<p>Before indexing user text, deja removes the outer <code>&lt;USER_REQUEST&gt;</code> wrapper, complete <code>&lt;ADDITIONAL_METADATA&gt;</code> and <code>&lt;USER_SETTINGS_CHANGE&gt;</code> blocks, and the <code>Comments on artifact URI:</code> lines the IDE adds when a plan is approved or rejected. Content is capped at 1 MiB per message.</p>
+<p>A tool step names its file in a sentence (&#34;The following changes were made by</p>
+<p>the replace_file_content tool to: <code>&lt;path&gt;</code>&#34;), not on a labelled line, and</p>
+<p>carries the change as a <code>[diff_block_start]</code> … <code>[diff_block_end]</code> block. Both</p>
+<p>sides of that block are read: the removed lines are the replaced span, the added</p>
+<p>lines are the written side <code>deja blame</code> attributes a line by. Some blocks carry</p>
+<p>unified <code>--- a/x</code> / <code>+++ b/x</code> headers, which are not lines of the file and are</p>
+<p>skipped.</p>
+<h2 id="handoff">Handoff</h2>
+<p>Antigravity&#39;s terminal client is <code>agy</code>, and <code>agy -i &lt;prompt&gt;</code> opens an</p>
+<p>interactive session on it, so <code>deja handoff --to agy</code> — or <code>--to antigravity</code>,</p>
+<p>the same target — starts it directly. Verified on agy 1.1.7. On the screen</p>
+<p>bare <code>deja</code> opens, <code>o</code> on any session hands it to Antigravity the same way, and</p>
+<p><code>r</code> on an Antigravity session runs <code>agy --conversation &lt;id&gt;</code>.</p>
+<h2 id="hooks">Hooks</h2>
+<p><code>PreInvocation</code> is the one hook whose answer reaches the model, so it carries</p>
+<p>what other hosts split across events. After the first invocation it reads the</p>
+<p>transcript the payload names: a planner step that called</p>
+<p><code>replace_file_content</code>, <code>multi_replace_file_content</code> or <code>write_to_file</code> gets</p>
+<p>the line deja keeps for that file, and a <code>CHECKPOINT</code> step, which is how a</p>
+<p>compaction shows, gets the session as it stood before it, once. Antigravity</p>
+<p>keeps the steps before a checkpoint, so nothing else is needed.</p>
+<p>Antigravity has no session-end event. <code>PreInvocation</code> marks the conversation</p>
+<p>live, and a <code>Stop</code> hook, fired when the execution loop ends, runs</p>
+<p><code>deja hook-session-end</code> so another conversation&#39;s MCP recall can answer with</p>
+<p>it between turns.</p>
+<h2 id="status-line">Status line</h2>
+<p>agy runs a command for its status line, set by <code>/statusline &lt;command&gt;</code> or the</p>
+<p><code>statusLine</code> key in <code>~/.gemini/antigravity-cli/settings.json</code> (agy 1.3.1).</p>
+<p><code>antigravity-auto</code> writes <code>deja statusline</code> there with <code>stack_with_default</code>,</p>
+<p>so agy&#39;s own line stays above deja&#39;s. agy pipes <code>session_id</code> and a</p>
+<p><code>transcript_path</code> that ends in <code>transcript.jsonl</code> for every conversation, so</p>
+<p>the line finds the session by its id. A status line already set up there is</p>
+<p>left alone.</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li>User-visible content and machine metadata share one string field.</li>
+<li>System events and other source values can be interleaved with conversation records.</li>
+<li>A malformed or partially written JSONL line is skipped.</li>
+<li>If a timestamp is absent, later messages fall back to the session start when one has already been observed.</li>
+</ul>
+<p><strong>Last verified:</strong> 2026-09-20</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

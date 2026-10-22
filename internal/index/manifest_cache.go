@@ -1,0 +1,440 @@
+package index
+
+import (
+	"fmt"
+	"hash/fnv"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unicode/utf8"
+)
+
+// Long-lived processes (the MCP server foremost) call read-only retrieval
+// dozens of times per session; decoding the manifest and a thousand session
+// metas on every call is pure waste. The cache is keyed by manifest.gob's
+// mtime+size — which the atomic swap usually changes, and not always: a
+// rewrite that keeps the size and lands inside one tick of the filesystem's
+// timestamp resolution leaves the pair identical. So a writer in this process
+// drops the entry itself (writeManifest), and the stamp is what catches a
+// rewrite by another process.
+//
+// sessions.gob is half of the manifest and is keyed the same way: the
+// freshness check reads through this cache too, and a sessions file damaged
+// under an unchanged manifest.gob has to reach it as the error that rebuilds
+// the index, not be answered from memory (#5386).
+//
+// Contract: the cached Manifest is shared — read-only paths must not mutate
+// it. Writers keep using readManifest directly.
+var manifestCache struct {
+	mu sync.Mutex
+	// dir and fi are what the entry was read from: fi carries the file's
+	// identity as well as its time and size, so a manifest swapped in by a
+	// rebuild never reuses the entry of the one it replaced.
+	dir      string
+	fi       os.FileInfo
+	sessions os.FileInfo
+	m        Manifest
+	ok       bool
+}
+
+func readManifestCached(dir string) (Manifest, error) {
+	// Plain stat: a failure here falls through to readManifest, which waits the
+	// swap out itself, so a wait added here cannot be made to fail (#1319).
+	fi, err := os.Stat(filepath.Join(dir, "manifest.gob"))
+	if err != nil {
+		return readManifest(dir)
+	}
+	si, err := os.Stat(filepath.Join(dir, "sessions.gob"))
+	if err != nil {
+		return readManifest(dir)
+	}
+	manifestCache.mu.Lock()
+	if manifestCache.ok && manifestCache.dir == dir && sameGeneration(manifestCache.fi, fi) && sameGeneration(manifestCache.sessions, si) {
+		m := manifestCache.m
+		manifestCache.mu.Unlock()
+		return m, nil
+	}
+	manifestCache.mu.Unlock()
+	m, err := readManifest(dir)
+	if err != nil {
+		return m, err
+	}
+	cacheManifest(dir, fi, si, m)
+	return m, nil
+}
+
+// cacheManifest makes m the cached manifest of dir, as read from the files fi
+// and si describe.
+func cacheManifest(dir string, fi, si os.FileInfo, m Manifest) {
+	manifestCache.mu.Lock()
+	manifestCache.dir, manifestCache.fi, manifestCache.sessions = dir, fi, si
+	manifestCache.m, manifestCache.ok = m, true
+	manifestCache.mu.Unlock()
+}
+
+// moveManifestCache follows a directory renamed from tmp to dir: its files
+// are the same files, so a manifest cached for tmp is dir's now.
+func moveManifestCache(tmp, dir string) {
+	manifestCache.mu.Lock()
+	defer manifestCache.mu.Unlock()
+	switch manifestCache.dir {
+	case tmp:
+		manifestCache.dir = dir
+	case dir:
+		manifestCache.ok = false
+	}
+}
+
+// manifestGeneration is the manifest file as one stat sees it, nil when there
+// is none. Every write of the manifest replaces the file by rename, so two of
+// these name the same generation only if they are the same file.
+func manifestGeneration(dir string) os.FileInfo {
+	fi, err := os.Stat(filepath.Join(dir, "manifest.gob"))
+	if err != nil {
+		return nil
+	}
+	return fi
+}
+
+// sessionsGeneration is manifestGeneration for sessions.gob.
+func sessionsGeneration(dir string) os.FileInfo {
+	fi, err := os.Stat(filepath.Join(dir, "sessions.gob"))
+	if err != nil {
+		return nil
+	}
+	return fi
+}
+
+// sameGeneration reports whether two stats of the manifest saw the same file,
+// unchanged.
+func sameGeneration(a, b os.FileInfo) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return os.SameFile(a, b) && a.ModTime().Equal(b.ModTime()) && a.Size() == b.Size()
+}
+
+// Stamp changes whenever the index is written: the manifest file's time and
+// size, from one stat. A caller that derives something from the whole index,
+// such as the screen's count of every session, keeps it while the stamp holds.
+func Stamp(dir string) string {
+	if dir == "" {
+		dir = DefaultDir()
+	}
+	fi, err := os.Stat(filepath.Join(dir, "manifest.gob"))
+	if err != nil {
+		return ""
+	}
+	return fi.ModTime().UTC().Format(time.RFC3339Nano) + "+" + strconv.FormatInt(fi.Size(), 10)
+}
+
+// invalidateManifestCache drops this process's shared manifest snapshot after
+// a core-only write. Compaction packets deliberately update manifest.gob
+// without touching sessions.gob; a subsequent index writer must not reuse an
+// in-memory Manifest from before that atomic replacement.
+func invalidateManifestCache(dir string) {
+	manifestCache.mu.Lock()
+	defer manifestCache.mu.Unlock()
+	if manifestCache.dir == dir {
+		manifestCache.ok = false
+	}
+}
+
+// The token catalog is every distinct token in the corpus — 180k strings on a
+// real store. The stem and fuzzy tiers each build it, so a single query that
+// falls through the ladder built it twice, ~63 ms of pure duplication.
+//
+// Keyed on the bucket files themselves, not the manifest: a bucket can be
+// corrupted without the manifest changing, and tokenCatalog reporting that
+// corruption is what makes the search ladder rebuild. A manifest-keyed cache
+// would have hidden it.
+//
+// Contract: the returned map is shared and must not be mutated.
+var catalogCache struct {
+	mu  sync.Mutex
+	dir string
+	sig string
+	idx *tokenIndex
+	ok  bool
+}
+
+// tokenIndex is the catalog plus the same tokens bucketed by rune length.
+// Fuzzy matching only ever considers tokens within its edit limit of the
+// query's length, so bucketing turns a scan of every token in the corpus into
+// a walk of a few short slices.
+type tokenIndex struct {
+	set   map[string]bool
+	byLen [][]string
+	// The tokens that carry a combining mark. The close tier treats a mark as
+	// free, and a marked token is as many runes longer than its unmarked form
+	// as it has marks, so the ordinary length window never reaches it
+	// (#1941). Collected here on the way past and keyed by their unmarked
+	// form on first use: a lookup rather than a walk, because on a corpus
+	// where most tokens are marked — the Arabic and Thai stores this exists
+	// for — walking them cost 36 ms per term, and the only thing that walk
+	// could find is what the lookup returns. Built lazily because a query
+	// that has no unmarked form to ask about never pays for it.
+	marked     []string
+	byUnmarked map[string][]string
+	markedOnce sync.Once
+	// umlauted holds the tokens with ä, ö, ü or ß, keyed on first use by how
+	// the same word is written in ASCII: Müller is mueller in a handle, an
+	// email or a URL. Two edits and a different length from it, so the edit
+	// window never joined them, while muller, one edit away, did (#4690).
+	umlauted    []string
+	byDigraph   map[string][]string
+	digraphOnce sync.Once
+	// dirs is every bucket's directory, read with the catalog, for the
+	// part-of-word step to walk without opening every bucket again.
+	dirs []bucketDir
+	// glued keys the non-ASCII tokens by their first and last runes, for the
+	// step that finds a Russian word glued to something else (#5386).
+	glued     gluedIndex
+	gluedOnce sync.Once
+}
+
+// gluedKeyRunes is how many runes of a token's head and tail key it. The
+// shortest form the glued step asks about is four runes long, so a token that
+// starts or ends with one shares these with it.
+const gluedKeyRunes = 4
+
+type gluedIndex struct {
+	head, tail map[string][]string
+}
+
+// gluedKeys is the non-ASCII tokens longer than gluedKeyRunes, keyed by their
+// first and by their last gluedKeyRunes runes. Built once per catalog, on the
+// first query that reaches the glued step.
+func (t *tokenIndex) gluedKeys() gluedIndex {
+	t.gluedOnce.Do(func() {
+		t.glued = gluedIndex{head: map[string][]string{}, tail: map[string][]string{}}
+		for tok := range t.set {
+			if isASCIIString(tok) || utf8.RuneCountInString(tok) <= gluedKeyRunes {
+				continue
+			}
+			h, tl := runeHead(tok, gluedKeyRunes), runeTail(tok, gluedKeyRunes)
+			t.glued.head[h] = append(t.glued.head[h], tok)
+			t.glued.tail[tl] = append(t.glued.tail[tl], tok)
+		}
+	})
+	return t.glued
+}
+
+// runeHead is the first n runes of s, or all of it when it is shorter.
+func runeHead(s string, n int) string {
+	i := 0
+	for ; n > 0 && i < len(s); n-- {
+		_, w := utf8.DecodeRuneInString(s[i:])
+		i += w
+	}
+	return s[:i]
+}
+
+// runeTail is the last n runes of s, or all of it when it is shorter.
+func runeTail(s string, n int) string {
+	i := len(s)
+	for ; n > 0 && i > 0; n-- {
+		_, w := utf8.DecodeLastRuneInString(s[:i])
+		i -= w
+	}
+	return s[i:]
+}
+
+const maxIndexedTokenLen = 64
+
+func newTokenIndex(set map[string]bool) *tokenIndex {
+	idx := &tokenIndex{set: set, byLen: make([][]string, maxIndexedTokenLen+2)}
+	for tok := range set {
+		n := len(tok)
+		ascii := isASCIIString(tok)
+		if !ascii {
+			n = utf8.RuneCountInString(tok)
+		}
+		idx.byLen[bucketFor(n)] = append(idx.byLen[bucketFor(n)], tok)
+		if ascii {
+			continue // no ASCII byte is a combining mark
+		}
+		if hasMark(tok) {
+			idx.marked = append(idx.marked, tok)
+		}
+		if strings.ContainsAny(tok, "äöüß") {
+			idx.umlauted = append(idx.umlauted, tok)
+		}
+	}
+	return idx
+}
+
+// umlautDigraphs writes ä, ö, ü and ß the way German does without them.
+var umlautDigraphs = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss")
+
+// digraphFormsOf is the other spelling of word under umlautDigraphs: the
+// umlauted tokens written word in ASCII, or, for an umlauted word, its ASCII
+// spelling when the corpus holds it.
+func (t *tokenIndex) digraphFormsOf(word string) []string {
+	if strings.ContainsAny(word, "äöüß") {
+		if d := umlautDigraphs.Replace(word); t.set[d] {
+			return []string{d}
+		}
+		return nil
+	}
+	// Every digraph form holds ae, oe, ue or ss, so a word with neither an e
+	// nor an ss is no umlauted token's ASCII spelling.
+	if !strings.Contains(word, "e") && !strings.Contains(word, "ss") {
+		return nil
+	}
+	t.digraphOnce.Do(func() {
+		t.byDigraph = make(map[string][]string, len(t.umlauted))
+		for _, tok := range t.umlauted {
+			d := umlautDigraphs.Replace(tok)
+			t.byDigraph[d] = append(t.byDigraph[d], tok)
+		}
+		for _, forms := range t.byDigraph {
+			sort.Strings(forms)
+		}
+	})
+	return t.byDigraph[word]
+}
+
+// markedForms keys the marked tokens by their unmarked form, once.
+func (t *tokenIndex) markedForms() map[string][]string {
+	t.markedOnce.Do(func() {
+		if len(t.marked) == 0 {
+			return
+		}
+		t.byUnmarked = make(map[string][]string, len(t.marked))
+		for _, tok := range t.marked {
+			if bare, _ := unmarked(tok); bare != "" {
+				t.byUnmarked[bare] = append(t.byUnmarked[bare], tok)
+			}
+		}
+		for _, forms := range t.byUnmarked {
+			sort.Strings(forms) // one order, whatever the map hands back
+		}
+	})
+	return t.byUnmarked
+}
+
+// bucketFor clamps a rune length to the bucket that holds it; anything longer
+// than maxIndexedTokenLen shares one overflow bucket, which is always scanned.
+func bucketFor(n int) int {
+	if n > maxIndexedTokenLen {
+		return maxIndexedTokenLen + 1
+	}
+	return n
+}
+
+// candidates visits the tokens whose rune length is within limit of n, plus
+// the overflow bucket, which holds tokens too long to bucket exactly.
+func (t *tokenIndex) candidates(n, limit int, fn func(string)) {
+	lo, hi := n-limit, n+limit
+	if lo < 0 {
+		lo = 0
+	}
+	if hi > maxIndexedTokenLen {
+		hi = maxIndexedTokenLen
+	}
+	for l := lo; l <= hi && l < len(t.byLen); l++ {
+		for _, tok := range t.byLen[l] {
+			fn(tok)
+		}
+	}
+	for _, tok := range t.byLen[maxIndexedTokenLen+1] {
+		fn(tok)
+	}
+}
+
+// markedFormsOf is the tokens that are word with combining marks on it, or —
+// when word itself carries marks — the tokens that carry different ones, plus
+// the bare form if the corpus holds it. Nothing else: a mark is free on the
+// close tier, and nothing else is.
+func (t *tokenIndex) markedFormsOf(word string) []string {
+	bare, marked := unmarked(word)
+	if bare == "" {
+		return nil
+	}
+	forms := t.markedForms()[bare]
+	if !marked {
+		return forms
+	}
+	// A marked query reaches the bare word as well as its other spellings,
+	// and never itself.
+	out := make([]string, 0, len(forms)+1)
+	if t.set[bare] {
+		out = append(out, bare)
+	}
+	for _, f := range forms {
+		if f != word {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// bucketsSignature changes whenever any bucket file is added, removed, resized
+// or rewritten. Stat-only, so it costs a fraction of building the catalog.
+func bucketsSignature(dir string) (string, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, "buckets"))
+	if err != nil {
+		return "", err
+	}
+	h := fnv.New64a()
+	for _, de := range entries {
+		fi, err := de.Info()
+		if err != nil {
+			return "", err
+		}
+		_, _ = h.Write([]byte(de.Name()))
+		_, _ = fmt.Fprintf(h, "|%d|%d;", fi.Size(), fi.ModTime().UnixNano())
+	}
+	return strconv.FormatUint(h.Sum64(), 16), nil
+}
+
+func tokenCatalogCached(dir string) (map[string]bool, error) {
+	idx, err := tokenIndexCached(dir)
+	if err != nil {
+		return nil, err
+	}
+	return idx.set, nil
+}
+
+// catalogReads counts how often the token catalog was consulted, for the test
+// that pins the fuzzy tier's early exit (#2898). Reading it is the only way to
+// tell "answered no without looking" from "looked, then answered no".
+var catalogReads atomic.Int64
+
+func tokenIndexCached(dir string) (*tokenIndex, error) {
+	catalogReads.Add(1)
+	sig, err := bucketsSignature(dir)
+	if err != nil {
+		c, dirs, cerr := tokenCatalogDirs(dir)
+		if cerr != nil {
+			return nil, cerr
+		}
+		i := newTokenIndex(c)
+		i.dirs = dirs
+		return i, nil
+	}
+	catalogCache.mu.Lock()
+	if catalogCache.ok && catalogCache.dir == dir && catalogCache.sig == sig {
+		i := catalogCache.idx
+		catalogCache.mu.Unlock()
+		return i, nil
+	}
+	catalogCache.mu.Unlock()
+	c, dirs, err := tokenCatalogDirs(dir)
+	if err != nil {
+		return nil, err
+	}
+	i := newTokenIndex(c)
+	i.dirs = dirs
+	catalogCache.mu.Lock()
+	catalogCache.dir, catalogCache.sig = dir, sig
+	catalogCache.idx, catalogCache.ok = i, true
+	catalogCache.mu.Unlock()
+	return i, nil
+}

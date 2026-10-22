@@ -1,0 +1,682 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/sources"
+)
+
+// A hook or plugin deja wrote is a copy of what this binary generates, frozen
+// at install time. Upgrade the binary and those copies stay as they were:
+// when a generator changes — a wrong event name, a timeout in the wrong unit —
+// the fix ships and never reaches anyone, because nobody re-runs an installer
+// that already succeeded. That is how qwen and kimi sat with dead wiring here
+// for weeks.
+//
+// So deja records what it wired and with which version, and refreshes those
+// same targets after an upgrade. Only targets it installed itself, never a
+// new one: this repairs, it does not spread.
+type wiringState struct {
+	Version string   `json:"version"`
+	Targets []string `json:"targets"`
+	// Home is the home directory the targets were written under. The repair
+	// derives every path from the environment it runs in, so a process whose
+	// HOME points elsewhere while the record is still visible — sudo with a
+	// preserved XDG_CONFIG_HOME, a container, an su session — wrote a fresh
+	// set of configs into a home nobody installed into, left the real ones
+	// pointing at the old binary, and marked the record repaired (#885).
+	Home string `json:"home,omitempty"`
+	// Created are the config paths that did not exist before deja wrote them.
+	// #840 established that a file which turns out to be entirely deja's is
+	// deleted on the way out rather than left empty; that test is byte-emptiness,
+	// which the structured writers never reach — they leave `{"mcpServers":{}}`.
+	// Knowing which files deja made is what lets the same rule apply to them
+	// without ever removing a config the reader already had (#2583).
+	Created []string `json:"created,omitempty"`
+	// Dirs are the directories deja had to create to write a config into. The
+	// prune on the way out states the rule "when deja made it and nothing else
+	// is in it" and could only test the second half, so an empty folder the
+	// reader already had — a host's `User` directory, say — went with the
+	// uninstall (#3239).
+	Dirs []string `json:"dirs,omitempty"`
+	// Snapshots are the .bak files deja wrote itself. Ownership of a snapshot
+	// cannot be read out of its bytes — a reader's own config that merely says
+	// the word matches every marker list — so the uninstall that deletes one
+	// asks this instead (#3340).
+	Snapshots []string `json:"snapshots,omitempty"`
+	// Blocks are the containers deja added to a config that had none —
+	// "<path>#mcpServers". Removing only deja's entry left the reader with an
+	// empty block they never wrote (#2604); knowing deja added it is what
+	// allows taking it back without touching one they wrote themselves.
+	Blocks []string `json:"blocks,omitempty"`
+	// Exe is the binary path the configs were written with. A move without a
+	// version change is ordinary — a relink, a reinstall of the same release,
+	// a `go install` over a manual download — and left every config pointing
+	// at a path that no longer exists (#773).
+	Exe string `json:"exe,omitempty"`
+	// Exes are the binary paths deja has written into configs, newest last.
+	// An entry is recognised as deja's own by the command it runs, and that
+	// test used to accept only a file named `deja` — so an install from a
+	// build under another name did not see the old entry as ours and stacked
+	// a second one beside it (#3421). The record is what makes the answer
+	// certain rather than a guess about names.
+	Exes []string `json:"exes,omitempty"`
+	// Written is the path the configs name when it is not Exe itself: a link
+	// that resolves to it, which survives the upgrade that replaces Exe
+	// (#4189). Remove the link and the configs are dead while Exe is still
+	// there, so the repair checks this too.
+	Written string `json:"written,omitempty"`
+}
+
+// writtenStillResolves reports whether the path the configs name still leads
+// to exe.
+func (st wiringState) writtenStillResolves(exe string) bool {
+	if st.Written == "" {
+		return true
+	}
+	r, err := filepath.EvalSymlinks(st.Written)
+	return err == nil && r == exe
+}
+
+// wiringWrittenExe is the path this run wrote into configs, when the repair
+// chose a link; recordWiring keeps it as Written.
+var wiringWrittenExe string
+
+// wiringExeHistory bounds the remembered paths. Ten covers a machine that
+// reinstalls often; beyond that the oldest is dropped.
+const wiringExeHistory = 10
+
+// fileExists reports whether a path is on disk. Used where the answer decides
+// whether something is a move or a stranger.
+func fileExists(p string) bool {
+	if p == "" {
+		return false
+	}
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// rememberWrittenExe adds a path to the record's history, newest last, without
+// repeating one it already holds.
+func rememberWrittenExe(st *wiringState, exe string) {
+	if exe == "" {
+		return
+	}
+	for _, p := range st.Exes {
+		if p == exe {
+			return
+		}
+	}
+	st.Exes = append(st.Exes, exe)
+	if len(st.Exes) > wiringExeHistory {
+		st.Exes = st.Exes[len(st.Exes)-wiringExeHistory:]
+	}
+}
+
+func wiringStatePath() string {
+	return filepath.Join(xdgConfigHome(), "deja", "wiring.json")
+}
+
+// xdgConfigHome is the base for the files that are deja's own — the wiring
+// record and the sync timer's unit — not for the ones that mirror a harness's
+// path logic.
+//
+// The XDG spec: "All paths set in these environment variables must be
+// absolute. If an implementation encounters a relative path in any of these
+// variables it should consider the path invalid and ignore it." deja honoured
+// a relative value instead, so `XDG_CONFIG_HOME=relcfg deja install` wrote
+// wiring.json into whatever directory the command ran from, where no later run
+// would look for it (#1693).
+func xdgConfigHome() string { return sources.ConfigHome() }
+
+func readWiringState() wiringState {
+	var st wiringState
+	b, err := os.ReadFile(wiringStatePath())
+	if err != nil {
+		return st
+	}
+	_ = json.Unmarshal(b, &st)
+	return st
+}
+
+// holdingInstallLock is set while this process has the install lock. flock is
+// held per open file, not per process, so a second attempt from the same
+// process would wait on itself — the repair runs inside a session start that
+// may itself be under the lock.
+var holdingInstallLock bool
+
+// installLockPath is deja's own file, beside the wiring record.
+func installLockPath() string {
+	return filepath.Join(xdgConfigHome(), "deja", "install.lock")
+}
+
+// holdInstallLock serialises the read-modify-write in every config writer.
+// `wait` blocks for the other process to finish; without it a caller that
+// cannot have the lock is told so and can skip its work — which is what the
+// repair does, since the process holding the lock is installing anyway.
+// busy is true only when another process holds it, which is the answer a
+// caller that means to stand down needs; a machine that will not give deja a
+// lock at all is not a reason to skip the work.
+func holdInstallLock(wait bool) (func(), bool, bool) {
+	if holdingInstallLock {
+		return func() {}, false, false
+	}
+	unlock, ok, busy := takeInstallLock(installLockPath(), wait)
+	if !ok {
+		return func() {}, false, busy
+	}
+	holdingInstallLock = true
+	return func() {
+		holdingInstallLock = false
+		unlock()
+	}, true, false
+}
+
+// recordWiring remembers the targets an install wrote. Uninstalled ones drop
+// out, so a user who removes a harness is not re-wired behind their back.
+//
+// statusline is one of them. It was skipped from the first version of this
+// record, and the cost was the whole bookkeeping: `deja install statusline` on
+// its own kept nothing wired, so with no other target the record was never
+// written at all — the file it had just created was not known to be deja's,
+// its uninstall left an empty `{}` behind instead of removing it, the snapshot it
+// took of its own config was reported as "configs you already had", and the
+// repair after a move never reached the status bar (#3684).
+func recordWiring(targets []string, uninstall bool) {
+	st := readWiringState()
+	have := map[string]bool{}
+	for _, t := range st.Targets {
+		have[t] = true
+	}
+	for _, t := range targets {
+		// Under its own name: `deja install dsh-auto` was dropped as unknown
+		// below, so nothing was recorded and the directories it made were
+		// left behind by the uninstall.
+		if canonical, ok := installTargetAliases[t]; ok {
+			t = canonical
+		}
+		have[t] = !uninstall
+	}
+	known := map[string]bool{}
+	for _, t := range installTargetNames() {
+		known[t] = true
+	}
+	var kept []string
+	for t, on := range have {
+		// Only names deja knows. The record is written from the arguments,
+		// before any of them has been through installTarget, so `deja install
+		// nosuchtarget` — a typo, or a probe listing the names — was kept
+		// beside the targets that worked, and every repair after that retried
+		// it, failed, and counted it in the "could not rewire" line a person
+		// sees at session start. A name already in a record written by an
+		// older build drops out here too (#3695).
+		if on && known[t] {
+			kept = append(kept, t)
+		}
+	}
+	sort.Strings(kept)
+	invoked, _ := runningExe()
+	invoked, _ = filepath.Abs(invoked)
+	exe := invoked
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	// What the configs were given: install writes the binary as it was
+	// started, the repair whatever stableExe chose.
+	written := invoked
+	if wiringWrittenExe != "" {
+		written = wiringWrittenExe
+	}
+	if written == exe {
+		written = ""
+	}
+	// Uninstalling everything on a machine that was never wired would otherwise
+	// create the record on the way out — a file left behind by the command that
+	// removes things (#676).
+	if len(kept) == 0 {
+		if _, err := os.Stat(wiringStatePath()); os.IsNotExist(err) {
+			return
+		}
+	}
+	created := append([]string(nil), st.Created...)
+	seen := map[string]bool{}
+	for _, p := range created {
+		seen[p] = true
+	}
+	for _, p := range createdByThisRun {
+		if !seen[p] {
+			created = append(created, p)
+			seen[p] = true
+		}
+	}
+	// A path deja no longer wired is not one it will be asked about again.
+	if len(kept) == 0 {
+		created = nil
+		// And nothing is left pointing at the launcher, so it goes with them.
+		// While one target stays wired it is still the path that target runs.
+		removeDejaLauncher()
+	}
+	sort.Strings(created)
+	dirs := append([]string(nil), st.Dirs...)
+	for _, p := range createdDirsByThisRun {
+		if !slices.Contains(dirs, p) {
+			dirs = append(dirs, p)
+		}
+	}
+	if len(kept) == 0 {
+		dirs = nil
+	}
+	sort.Strings(dirs)
+	snapshots := append([]string(nil), st.Snapshots...)
+	for _, p := range snapshotsByThisRun {
+		if !slices.Contains(snapshots, p) {
+			snapshots = append(snapshots, p)
+		}
+	}
+	if len(kept) == 0 {
+		snapshots = nil
+	}
+	sort.Strings(snapshots)
+	blocks := append([]string(nil), st.Blocks...)
+	for _, b := range blocksAddedThisRun {
+		if !slices.Contains(blocks, b) {
+			blocks = append(blocks, b)
+		}
+	}
+	blocks = slices.DeleteFunc(blocks, func(b string) bool { return blocksForgottenThisRun[b] })
+	if len(kept) == 0 {
+		blocks = nil
+	}
+	sort.Strings(blocks)
+	exes := append([]string(nil), st.Exes...)
+	next := wiringState{Version: version, Targets: kept, Created: created, Dirs: dirs, Snapshots: snapshots,
+		Blocks: blocks, Exe: exe, Exes: exes, Home: homeDir(), Written: written}
+	rememberWrittenExe(&next, exe)
+	rememberWrittenExe(&next, written)
+	st = next
+	b, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return
+	}
+	path := wiringStatePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+// exeIsTemporary reports whether the running binary is one the wiring must not
+// adopt. A variable so a test can drive both answers: the test binary itself
+// always lives in a temp directory, so the check has to be exercised rather
+// than inherited (#2684).
+var exeIsTemporary = func(p string) bool {
+	if underTestBinary() {
+		return false
+	}
+	return underTempDir(p)
+}
+
+// underTempDir reports whether a path sits somewhere something else will
+// delete: this machine's temp directory, the two that are temp everywhere
+// regardless of what TMPDIR says, or any directory called tmp or temp along the
+// way.
+//
+// That last rule is what the scratch directories in #3656 needed. A build left
+// in `~/.claude/jobs/<id>/tmp/` is under nobody's TMPDIR and is thrown away all
+// the same, and five harnesses on one machine were wired to one.
+func underTempDir(p string) bool {
+	if p == "" {
+		return false
+	}
+	p = filepath.Clean(p)
+	// Both forms of each root: /tmp resolves to /private/tmp on macOS and
+	// /var/folders to /private/var/folders, and the path being judged may be
+	// written either way — it need not exist, so it cannot be resolved itself.
+	var roots []string
+	for _, root := range []string{os.TempDir(), "/tmp", "/private/tmp"} {
+		if root == "" || root == "/" {
+			continue
+		}
+		root = filepath.Clean(root)
+		roots = append(roots, root)
+		if resolved, err := filepath.EvalSymlinks(root); err == nil && resolved != root {
+			roots = append(roots, resolved)
+		}
+	}
+	for _, root := range roots {
+		if p == root || strings.HasPrefix(p, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(filepath.Dir(p)), "/") {
+		switch strings.ToLower(seg) {
+		case "tmp", "temp":
+			return true
+		}
+	}
+	return false
+}
+
+// runningExe is os.Executable, a variable so a test can run the repair as a
+// binary reached through a link.
+var runningExe = os.Executable
+
+// stableExe is the path to write for the running binary: a link that resolves
+// to it where there is one, the binary itself otherwise. A package manager
+// keeps each release in a versioned directory and moves a link to the new one
+// — Homebrew's Cellar and bin/deja — so an entry naming the resolved binary
+// breaks on the next upgrade and one naming the link does not (#4189). The
+// link the binary was started through comes first; Linux reports the resolved
+// binary as the executable, so the places the installers leave one are tried
+// after it.
+func stableExe(invoked, exe string) string {
+	for _, c := range append([]string{invoked}, launcherCandidates("")...) {
+		// A link in a temp directory goes when the directory does, which is
+		// what the resolved path was guarded against.
+		if c == "" || c == exe || exeIsTemporary(c) {
+			continue
+		}
+		if r, err := filepath.EvalSymlinks(c); err == nil && r == exe {
+			return c
+		}
+	}
+	return exe
+}
+
+// refreshWiringAfterUpgrade rewrites the recorded targets when the binary that
+// wrote them is not the one running now. It returns the targets it changed, so
+// a caller with somewhere to print can say so; the hook paths call it and stay
+// quiet, because a session start is not the place for maintenance chatter.
+func refreshWiringAfterUpgrade() []string {
+	// Each run answers for itself: the list is process state, and a second call
+	// in one process — the test binary, a long-lived host — must not inherit
+	// the first one's failures.
+	stuckWiring = nil
+	st := readWiringState()
+	if len(st.Targets) == 0 || version == "" {
+		return nil
+	}
+	invoked, err := runningExe()
+	if err != nil {
+		return nil
+	}
+	invoked, _ = filepath.Abs(invoked)
+	exe := invoked
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	// Either the version or the path: a binary that moved writes the same
+	// version into configs that now name a file which is not there (#773).
+	if st.Version == version && (st.Exe == "" || st.Exe == exe) && st.writtenStillResolves(exe) {
+		return nil
+	}
+	// But not a binary that will be gone tomorrow. The repair exists because
+	// deja moves — a release replaces it, a package manager relocates it — and
+	// it cannot tell that from one run of a build somewhere else: a `go run`, a
+	// colleague's checkout, a CI job, a scratch build in a temp directory. Each
+	// of those rewrote every config on the machine to a path that stops
+	// existing, and the reader found out when recall went quiet (#2684).
+	if exeIsTemporary(exe) {
+		return nil
+	}
+	// And not a binary that simply is not the installed one. A temp directory
+	// is the obvious case of that and was the only one guarded, so a build in
+	// a checkout, a home directory or an agent's scratch adopted every config
+	// on its first run — one machine ended with eight entries per event, each
+	// naming a different build and all of them firing (#3421). The honest
+	// "deja moved" case is the recorded binary no longer being there.
+	if st.Exe != "" && st.Exe != exe && fileExists(st.Exe) {
+		return nil
+	}
+	// Only the home the targets were written under: this repairs, it does not
+	// spread (#885).
+	if st.Home != "" && st.Home != homeDir() {
+		return nil
+	}
+	// Not while an install is running. This is the other half of the race in
+	// #3691 and the one that fires without anyone asking: two sessions start
+	// together, or one starts while `deja install` is typing, and two
+	// processes rewrite one config from the state each read first. Waiting
+	// would sit a session start behind somebody's install, so the repair
+	// stands down instead — the process holding the lock is writing the same
+	// wiring this one would.
+	release, ok, busy := holdInstallLock(false)
+	if busy {
+		return nil
+	}
+	if ok {
+		defer release()
+	}
+	var changed []string
+	failed := false
+	// Compared resolved, written through the link.
+	write := stableExe(invoked, exe)
+	wiringWrittenExe = write
+	defer func() { wiringWrittenExe = "" }()
+	for _, target := range st.Targets {
+		res, err := installTarget(target, write, false)
+		if err != nil {
+			// A harness the user has since removed is not an error worth
+			// surfacing: the next install run will drop it from the record.
+			// One whose config cannot be written is: the record is left
+			// unstamped on purpose (#2212), so every later start repeats the
+			// repair and the same line, and nothing said which target was
+			// stuck or that anything had failed (#2594).
+			failed = true
+			stuckWiring = append(stuckWiring, target)
+			continue
+		}
+		cr, cerr := refreshCommandFile(target, write)
+		if cerr != nil {
+			failed = true
+			stuckWiring = append(stuckWiring, target)
+			continue
+		}
+		// The command counts as a change of its own. It is text the reader can
+		// have edited, and a rewrite that replaces it has to be announced even
+		// when the wiring beside it was already right (#886).
+		if wiringChanged(res) || wiringChanged(cr) {
+			changed = append(changed, target)
+		}
+	}
+	// Only when every target took the new path. Stamping the record after a
+	// refusal claimed a rewire that did not happen: the version then matched,
+	// so no later start tried again, and doctor's stale-wiring check reads the
+	// recorded path — which named the binary that exists while the config on
+	// disk still named the old one, so it said nothing either (#2212).
+	if failed {
+		return changed
+	}
+	recordWiring(st.Targets, false)
+	return changed
+}
+
+// snapshotsByThisRun are the .bak files this run wrote, before the record is
+// persisted at the end of it.
+var snapshotsByThisRun []string
+
+// rememberSnapshot records that deja took this snapshot.
+func rememberSnapshot(bak string) {
+	if !slices.Contains(snapshotsByThisRun, bak) {
+		snapshotsByThisRun = append(snapshotsByThisRun, bak)
+	}
+}
+
+// snapshotTaken reports whether deja wrote the snapshot beside path, this run
+// or an earlier one. A snapshot the reader put there themselves is theirs
+// whatever it holds.
+//
+// Both spellings of the path are asked. The write side follows a symlink
+// before taking the snapshot — a config in a dotfiles repository, and on macOS
+// every /var path, which resolves to /private/var — so the recorded name is
+// the resolved one while the caller here still holds the name it was given
+// (review of #3340).
+func snapshotTaken(path string) bool {
+	want := canonicalSnapshotPath(path + ".bak")
+	name := filepath.Base(want)
+	st := readWiringState()
+	for _, list := range [][]string{snapshotsByThisRun, st.Snapshots} {
+		for _, bak := range list {
+			if bak == path+".bak" {
+				return true
+			}
+			// Resolution keeps the file name, so a snapshot of another file
+			// is not worth a walk of its directories.
+			if filepath.Base(bak) == name && canonicalSnapshotPath(bak) == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// canonicalSnapshotPath is a snapshot's name with its directory resolved, so
+// the two spellings of one file meet. Resolution only runs forwards — nothing
+// recovers which link pointed at a real directory — so both sides are put in
+// the same form rather than one being converted into the other (review of
+// #3340). A directory that is already gone resolves to itself, which is the
+// uninstall's own case and is why the file itself is never resolved.
+func canonicalSnapshotPath(bak string) string {
+	dir, err := evalSymlinks(filepath.Dir(bak))
+	if err != nil {
+		return bak
+	}
+	return filepath.Join(dir, filepath.Base(bak))
+}
+
+// dirWiringCreated reports that deja had to make this directory to write a
+// config into it. Asked before the prune on the way out: an empty directory
+// the reader already had is theirs (#3239).
+func dirWiringCreated(dir string) bool {
+	if slices.Contains(createdDirsByThisRun, dir) {
+		return true
+	}
+	return slices.Contains(readWiringState().Dirs, dir)
+}
+
+// wiringCreated reports that deja created this config rather than finding it.
+func wiringCreated(path string) bool {
+	for _, p := range readWiringState().Created {
+		if p == path {
+			return true
+		}
+	}
+	for _, p := range createdByThisRun {
+		if p == path {
+			return true
+		}
+	}
+	return false
+}
+
+// refreshCommandFile rewrites the /deja command for a target that already has
+// one. The command holds the same absolute path the wiring does, and was
+// written by the install command rather than by installTarget, so a move left
+// it running a binary that is gone while everything around it was repaired
+// (#2693).
+//
+// Only a file that is already there: a machine installed with --no-guidance
+// has none, and the repair is not the place to hand it text it declined.
+func refreshCommandFile(target, exe string) (installResult, error) {
+	harness := guidanceHarness(target)
+	if !commandFileWritten(harness) {
+		return installResult{}, nil
+	}
+	return installCommandFile(harness, exe, false)
+}
+
+// wiringChanged reports whether a write did something worth telling the reader
+// about.
+func wiringChanged(r installResult) bool {
+	return r.Action != "" && r.Action != "unchanged"
+}
+
+// commandFileWritten reports whether this harness has a /deja command on disk.
+// Goose keeps the command in config.yaml and the workflow in a recipe beside
+// it, so the recipe is what answers for goose.
+func commandFileWritten(harness string) bool {
+	if harness == "goose" {
+		// Both halves. The writer re-adds the slash_commands entry and creates
+		// config.yaml if it has to, so going by the recipe alone would put back
+		// a command someone took out of the config by hand.
+		if _, err := os.Stat(gooseRecipePath()); err != nil {
+			return false
+		}
+		return gooseSlashCommandPresent()
+	}
+	path := commandFilePath(harness)
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// gooseSlashCommandPresent reports whether config.yaml still lists deja's
+// slash command, in any of the three quotings removeGooseSlashCommand knows.
+func gooseSlashCommandPresent() bool {
+	b, err := os.ReadFile(filepath.Join(gooseConfigDir(), "config.yaml"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		switch strings.TrimSpace(line) {
+		case `- command: "deja"`, "- command: deja", "- command: 'deja'":
+			return true
+		}
+	}
+	return false
+}
+
+// stuckWiring is what this process could not rewire. Read by the session start,
+// which is the only surface a person sees on an ordinary day.
+var stuckWiring []string
+
+// blocksAddedThisRun and blocksForgottenThisRun carry what this process added to
+// or took back from a config, until recordWiring folds them into the record.
+var (
+	blocksAddedThisRun     []string
+	blocksForgottenThisRun = map[string]bool{}
+)
+
+func blockKey(path, name string) string { return path + "#" + name }
+
+// noteBlockAdded records that deja, not the reader, put this container there.
+func noteBlockAdded(path, name string) {
+	key := blockKey(path, name)
+	// The later of a take-back and an add in one process is the one that holds.
+	delete(blocksForgottenThisRun, key)
+	blocksAddedThisRun = append(blocksAddedThisRun, key)
+}
+
+// blockWasAdded reports whether deja added it, in this run or an earlier one.
+func blockWasAdded(path, name string) bool {
+	key := blockKey(path, name)
+	if slices.Contains(blocksAddedThisRun, key) {
+		return true
+	}
+	return slices.Contains(readWiringState().Blocks, key)
+}
+
+// blocksAddedWithPrefix lists the names deja recorded for this file that
+// start with prefix — for a record that carries a value after its name.
+func blocksAddedWithPrefix(path, prefix string) []string {
+	var names []string
+	for _, key := range append(append([]string(nil), blocksAddedThisRun...), readWiringState().Blocks...) {
+		if name, ok := strings.CutPrefix(key, blockKey(path, prefix)); ok && !blocksForgottenThisRun[key] {
+			names = append(names, prefix+name)
+		}
+	}
+	return names
+}
+
+func forgetBlockAdded(path, name string) {
+	key := blockKey(path, name)
+	blocksForgottenThisRun[key] = true
+	blocksAddedThisRun = slices.DeleteFunc(blocksAddedThisRun, func(b string) bool { return b == key })
+}

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Command Code stores its history — session format</title>
+<meta name="description" content="Where Command Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/commandcode.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Command Code stores its history — session format">
+<meta property="og:description" content="Where Command Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/commandcode.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Command Code stores its history — session format">
+<meta name="twitter:description" content="Where Command Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Command Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Command Code","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/commandcode.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/commandcode.html","name":"Command Code","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html" aria-current="page">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Command Code</h1>
+<ul>
+<li><strong>ID</strong>: <code>commandcode</code></li>
+<li><strong>Store</strong>: <code>~/.commandcode/projects/&lt;encoded-cwd&gt;/&lt;session&gt;.jsonl</code></li>
+<li><strong>Read override</strong>: <code>DEJA_COMMANDCODE_ROOT</code> replaces the project root</li>
+<li><strong>Format</strong>: JSONL — a <code>session</code> header, then one <code>message</code> envelope per line</li>
+<li><strong>Needs</strong>: nothing</li>
+<li><strong>Resume</strong>: <code>cmd --resume &lt;id&gt;</code> (<code>cmdc</code> on Windows), run in the header&#39;s <code>cwd</code>, since it finds a session only under the current directory&#39;s project (#4372). With that directory gone, or none recorded, <code>cmd --session &lt;id&gt;</code>, which searches every project and continues the same transcript where you run it (checked against 1.73.4, #4460)</li>
+</ul>
+<p>Command Code writes a Claude-Code-style project directory with one transcript</p>
+<p>per session. Since 1.73 (format version 3) the first line is a header,</p>
+<p><code>{&#34;type&#34;:&#34;session&#34;,&#34;version&#34;:3,&#34;id&#34;,&#34;timestamp&#34;,&#34;cwd&#34;}</code>, and every line after</p>
+<p>it is <code>{&#34;type&#34;:&#34;message&#34;,&#34;timestamp&#34;,…,&#34;message&#34;:{&#34;role&#34;,&#34;content&#34;}}</code>, the</p>
+<p>content in Claude&#39;s blocks (<code>text</code>, <code>tool_use</code>, <code>tool_result</code>). The project is</p>
+<p>the header&#39;s <code>cwd</code>; the directory name is a lossy slug of it.</p>
+<p>Tool calls use Command Code&#39;s own names with Claude&#39;s input keys:</p>
+<p><code>shell_command</code> (<code>command</code>), <code>read_file</code>, <code>edit_file</code> (<code>file_path</code>,</p>
+<p><code>old_string</code>, <code>new_string</code>), <code>write_file</code> (<code>file_path</code>, <code>content</code>) and</p>
+<p><code>read_multiple_files</code> (<code>paths</code>). All of them are indexed as commands, files,</p>
+<p>replaced spans and written lines (#4370). A failed command&#39;s <code>tool_result</code></p>
+<p>opens with &#34;Exit code: N&#34; (or &#34;Exit code: N (No matches found)&#34; and the like)</p>
+<p>and has no <code>is_error</code>; that code goes on the command the result answers as</p>
+<p><code>→ exit N</code>. A clean run writes no such line and gets no code. A result that</p>
+<p>lands in a later index pass than its call is read with the call (#4539).</p>
+<p>1.74 adds <code>powershell</code> (<code>command</code>)</p>
+<p>and <code>monitor_command</code>, and <code>shell_command</code> and <code>monitor_command</code> take an <code>args</code></p>
+<p>list beside <code>command</code>; the command is recorded with its arguments as the client</p>
+<p>shows it, <code>go test ./...</code> for <code>{command: &#34;go&#34;, args: [&#34;test&#34;, &#34;./...&#34;]}</code>.</p>
+<p><code>read_file</code> takes a <code>paths</code> list too, where an entry with <code>*</code>, <code>?</code>, <code>[</code> or <code>{</code></p>
+<p>is a glob the client expands, not a file, and is left out (#4540).</p>
+<p>The older shape, one flat <code>role</code>/<code>content</code>/<code>timestamp</code>/<code>sessionId</code> line per</p>
+<p>message, is still read. The client migrates such a file to v3 in place the</p>
+<p>next time it opens the session and keeps the old copy as <code>&lt;session&gt;.v2.bak</code>.</p>
+<p><strong>Last verified:</strong> 2026-10-07 (command-code 1.77.0)</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li><strong>A sibling with the same extension.</strong> <code>&lt;session&gt;.checkpoints.jsonl</code> sits</li>
+</ul>
+<p>beside the transcript and is a snapshot stream, not a conversation — read as</p>
+<p>one it adds a session with no words in it that then competes for a recall</p>
+<p>slot. It is skipped by name, and a test pins that. So are</p>
+<p><code>&lt;session&gt;.prompts.jsonl</code> and <code>&lt;session&gt;.v2.bak</code>, which is the client&#39;s own</p>
+<p>transcript filter, and <code>doctor</code> counts them and the <code>&lt;session&gt;.meta.json</code></p>
+<p>sidecar as files beside the transcripts rather than as unread.</p>
+<ul>
+<li>A line whose role is neither <code>user</code> nor <code>assistant</code> is tool output, which is</li>
+</ul>
+<p>where a command&#39;s error text lives. It is indexed as tool output rather than</p>
+<p>dropped, so a user can search for an error they have already hit.</p>
+<ul>
+<li>Wiring: <code>deja install commandcode</code> writes all four of its user-scoped</li>
+</ul>
+<p>surfaces, and <code>commandcode-auto</code> adds the hooks —</p>
+<p><code>~/.commandcode/mcp.json</code> for the server, <code>skills/deja-history/SKILL.md</code>,</p>
+<p><code>commands/deja.md</code> for <code>/deja</code>, and a <code>hooks</code> key in <code>settings.json</code> in</p>
+<p>Claude&#39;s shape.</p>
+<ul>
+<li><strong>Two things there fail quietly if copied from another harness.</strong> The</li>
+</ul>
+<p>timeout unit is seconds, not milliseconds — the numbers deja passes to</p>
+<p>other settings.json targets would be ten minutes each, past the documented</p>
+<p>600-second maximum. And the tool matcher is a regex over Command Code&#39;s own</p>
+<p>display names — <code>SHELL</code>, <code>READ</code>, <code>EDIT</code>, <code>WRITE</code>, <code>SEARCH</code>, <code>GLOB</code>, <code>LIST</code></p>
+<p>— so a Claude-shaped <code>Bash</code> matcher never fires at all. Both are pinned by</p>
+<p>tests. The matcher is case-insensitive, so <code>SHELL</code> also fires on</p>
+<p><code>powershell</code>; the hook payload carries the internal tool name and</p>
+<p><code>tool_input.args</code> after <code>command</code>, and both are read (#4540).</p>
+<ul>
+<li>There is no per-prompt, compaction or session-end event among the shell</li>
+</ul>
+<p>hooks: the four documented are <code>SessionStart</code>, <code>PreToolUse</code>, <code>PostToolUse</code></p>
+<p>and <code>Stop</code>, so the digest rides SessionStart. The rest goes through a mod,</p>
+<p><code>~/.commandcode/mods/deja.ts</code>, which <code>commandcode-auto</code> writes and Command</p>
+<p>Code loads at the start of every session. Its <code>transformContext</code> adds the</p>
+<p>question&#39;s recall to the question on each model call of the turn (it never</p>
+<p>writes back, so the transcript keeps the person&#39;s words), <code>onSessionEnd</code></p>
+<p>ends the live stamp, and <code>cmd.ui.setStatus</code> puts <code>deja statusline</code> in the</p>
+<p>TUI footer. A <code>PreToolUse</code> cannot answer the question: a turn reaches the</p>
+<p>transcript only when it commits, after its tool calls (1.77.0 stand).</p>
+<ul>
+<li>Compaction appends <code>{&#34;type&#34;:&#34;compaction&#34;,&#34;summary&#34;,&#34;firstKeptEntryId&#34;}</code> and</li>
+</ul>
+<p>keeps every turn above it. The next matched <code>PreToolUse</code> reads the session</p>
+<p>as it stood before the newest one and answers with the packet, once. The</p>
+<p>summary is indexed as a summary.</p>
+<ul>
+<li>The transcript format above was read off files command-code 1.73.4 wrote</li>
+</ul>
+<p>and its bundle (<code>toStoredEntry</code>, <code>parseV3Lines</code>, <code>migrateToV3</code>). The wiring</p>
+<p>paths come from rulesync&#39;s <code>commandcode-paths.ts</code> and <code>types/hooks.ts</code>, and</p>
+<p>akitaonrails/ai-memory&#39;s support matrix.</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Hermes stores its history — session format</title>
+<meta name="description" content="Where Hermes writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/hermes.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Hermes stores its history — session format">
+<meta property="og:description" content="Where Hermes writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/hermes.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Hermes stores its history — session format">
+<meta name="twitter:description" content="Where Hermes writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Hermes writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Hermes","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/hermes.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/hermes.html","name":"Hermes","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html" aria-current="page">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Hermes</h1>
+<ul>
+<li><strong>ID</strong>: <code>hermes</code></li>
+<li><strong>Store</strong>: <code>~/.hermes/state.db</code> (0.17+) or <code>~/.hermes/profiles/&lt;profile&gt;/state.db</code> (older builds, one store per profile)</li>
+<li><strong>Home</strong>: <code>HERMES_HOME</code>, Hermes&#39;s own variable, is followed — profiles, plugins and <code>config.yaml</code> are read and written under it. <code>DEJA_HERMES_HOME</code> overrides it.</li>
+<li><strong>Read overrides</strong>: <code>DEJA_HERMES_PROFILES_ROOT</code> for the profiles directory, <code>DEJA_HERMES_DB</code> to pin a single store</li>
+<li><strong>Postgres</strong>: with <code>sessiondb.provider: postgresql</code> Hermes stops writing <code>state.db</code>; set <code>DEJA_HERMES_PG_DSN</code> and deja reads the same columns from the <code>messages</code> table through <code>psql</code> (#1018)</li>
+<li><strong>Format</strong>: SQLite relational store</li>
+</ul>
+<p>A flat <code>messages</code> table, grouped by <code>session_id</code>: <code>role</code>, <code>content</code>, and <code>timestamp</code></p>
+<p>as REAL epoch seconds. An assistant row that calls tools has no <code>content</code> and an</p>
+<p>OpenAI-style <code>tool_calls</code> array instead; the result lands on a <code>tool</code> row under the</p>
+<p>same <code>tool_call_id</code>. Calls to <code>terminal</code> become commands: a non-zero <code>exit_code</code> from</p>
+<p>the result rides on the command. <code>-1</code>, which Hermes returns for a command it never</p>
+<p>ran (denied, blocked, waiting on approval), drops the command record; any other</p>
+<p>negative code is a process killed by a signal after it started, so the command stays. <code>read_file</code>,</p>
+<p><code>write_file</code> and <code>patch</code> name the files, and <code>patch</code> and <code>write_file</code> give the edit and</p>
+<p>written sides — <code>patch</code> in its V4A mode as Hermes&#39; own parser reads it, <code>Move File</code></p>
+<p>included, with the lines after a move or delete belonging to no file. A <code>tool</code> row is</p>
+<p>kept as tool output by its <code>output</code>, <code>content</code>, <code>diff</code>, <code>matches_text</code> or <code>error</code>, or,</p>
+<p>when it has none of those keys, by every string in it (<code>search_files</code> in files mode,</p>
+<p><code>web_search</code>, <code>delegate_task</code>); keys starting with <code>_</code> and a bare byte count are not</p>
+<p>kept. Rows rewound away (<code>active = 0</code>, <code>compacted = 0</code>, or <code>active = 0</code> on a store</p>
+<p>without <code>compacted</code>) are skipped. Rows are read in insertion order, as Hermes reads them, on SQLite and Postgres alike.</p>
+<p>In-place compaction archives the turns it summarises and writes the kept head, a</p>
+<p>summary and the kept tail as one batch of live rows, in one transaction at the</p>
+<p>summary&#39;s time or under each row&#39;s original timestamp. Head rows that repeat the start</p>
+<p>of what was archived and tail rows that repeat its end, with such a timestamp, are that</p>
+<p>batch&#39;s copies and are not read twice (#4296); every summary anchors one, so a second</p>
+<p>compaction&#39;s archive of the first batch is read once too. The same request or run</p>
+<p>later counts again, and so does a tool result that is neither the archived one nor a</p>
+<p>stub. The summary (<code>[CONTEXT COMPACTION …</code> or the older <code>[CONTEXT SUMMARY]:</code>) is kept</p>
+<p>under the <code>summary</code> role; when Hermes merged it into the first tail message, the text</p>
+<p>after its end marker keeps that message&#39;s role. The placeholder compaction leaves for an</p>
+<p>image it stripped is not text. The compressor&#39;s stubs are dropped. Multimodal content, stored as</p>
+<p><code>\x00json:</code> and a list of parts, keeps its text parts and not the image (#4242). The</p>
+<p>Postgres path still reads prose only. A <code>sessions</code> table beside it carries <code>id</code>, <code>cwd</code>,</p>
+<p><code>git_repo_root</code> and <code>title</code>; the <code>cwd</code> is where the work happened and is what names</p>
+<p>the project, the same way a Cline or Roo workspace does. A store without that table,</p>
+<p>or a session whose row has no <code>cwd</code>, falls back to the profile name. The title is left</p>
+<p>to the index rather than taken from the first row.</p>
+<ul>
+<li><strong>MCP</strong>: <code>mcp_servers</code> in <code>~/.hermes/config.yaml</code>; <code>deja install hermes-auto</code> also drops a plugin (<code>~/.hermes/plugins/deja</code>, added to <code>plugins.enabled</code>) whose <code>pre_llm_call</code> hook injects recall and registers <code>/deja</code>, and whose <code>transform_tool_result</code> hook appends what was run after the same error before to a <code>terminal</code> result that did not exit 0, and the line deja keeps for a file to a <code>read_file</code>, <code>write_file</code> or <code>patch</code> result, and whose <code>on_session_finalize</code> hook runs <code>deja hook-session-end</code>, and a memory provider (<code>deja-memory</code>) that <code>hermes memory setup</code> lists next to mem0 and supermemory — the same recall in the <code>memory.provider</code> slot, with <code>deja_recall</code>, <code>deja_fix</code> and <code>deja_blame</code> as its tools. The provider is written against the interface Hermes has: <code>RecallStatus</code> arrived after <code>MemoryProvider</code>, so it is imported behind a guard and the status line is skipped where the class is missing — checked against Hermes 0.17.0, which has none. The hook stands aside for the provider only after loading it, so a provider that cannot import leaves the hook doing the recall rather than nobody.</li>
+<li><strong>Compaction</strong>: Hermes has no compaction hook for plugins. deja&#39;s plugin also answers <code>pre_api_request</code> and <code>post_llm_call</code> and watches the history they carry: when a new compaction summary (<code>_compressed_summary</code>) shows up, it hands the turns from the call before to <code>deja hook-precompact</code>, and the packet goes out with the next <code>pre_llm_call</code> (stand on 0.17.0 with <code>/compress</code>). This needs no <code>memory.provider</code>; with <code>deja-memory</code> set, the provider captures it instead.</li>
+<li><strong>Skill</strong>: <code>~/.hermes/skills/deja-history/SKILL.md</code>, top-level rather than inside the plugin: a plugin-bundled skill is opt-in in Hermes and never reaches the system prompt.</li>
+<li><strong>Resume</strong>: <code>hermes --resume &lt;id&gt;</code>; Hermes takes the same session id deja indexes, so it reopens that conversation rather than the most recent one. A session from a profile&#39;s store gets <code>-p &lt;profile&gt;</code>, since resume looks only in the active profile, and a root-store session gets <code>-p default</code> when another profile is active or deja runs under a profile&#39;s <code>HERMES_HOME</code>. A profile directory Hermes does not take by name (a reserved one like <code>default</code> or <code>tmp</code>, or one outside its <code>[a-z0-9_-]</code> pattern) and a session deleted with <code>hermes sessions delete</code> are refused with a pointer to <code>deja show</code>. A <code>delegate_task</code> child reopens the same way: <code>hermes --resume &lt;child&gt;</code> loads its history (0.17.0, #5303).</li>
+<li><strong>Handoff</strong>: exec, <code>hermes chat -q &lt;prompt&gt;</code>, a single query.</li>
+</ul>
+<p>Requested in <a href="https://github.com/vshulcz/deja-vu/issues/355">#355</a>.</p>
+<p><strong>Last verified:</strong> 2026-10-08</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

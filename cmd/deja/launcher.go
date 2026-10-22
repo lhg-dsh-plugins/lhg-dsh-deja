@@ -1,0 +1,225 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/sources"
+)
+
+// A hook entry holds the absolute path of the build that installed it, so
+// every move breaks every config at once: Homebrew upgrading, npm installing
+// somewhere else, a binary dropped in ~/bin. The repair that answers a broken
+// link writes the running binary into all of them, which is how one machine
+// collected eight entries per event, each naming a different build and each
+// firing on every prompt (#3421).
+//
+// The launcher is the path that does not move. Configs name it, it resolves
+// the real binary when the hook runs, and an upgrade rewrites one file instead
+// of twenty-eight. The opencode plugin has resolved this way since a moved
+// binary left it dead; this brings the hooks in line with it (#3422).
+//
+// Not on Windows: a .cmd cannot be exec'd the way a shebang script can, and a
+// harness that spawns the command without a shell would find nothing at all.
+// There the entry keeps the binary's own path, as before.
+func dejaLauncherPath() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	// Beside the wiring record, which is the other file that is deja's own
+	// rather than a mirror of some harness's path logic.
+	return filepath.Join(xdgConfigHome(), "deja", "bin", "deja-hook")
+}
+
+// hookExeFor is what a hook writer names in the config: the launcher on the
+// way in, and the binary's own path on the way out — an uninstall matches
+// entries by what they say, and writing a launcher for a run that is taking
+// the wiring away would leave the file behind.
+func hookExeFor(exe string, uninstall bool) string {
+	if uninstall {
+		return exe
+	}
+	return hookCommandExe(exe)
+}
+
+// mcpLaunchCommandArgs is the command and args of an MCP entry for a client
+// that starts its servers with a short list of variables: OpenClaw, Codex,
+// Hermes and Grok pass HOME, PATH and a few more, so a `deja mcp` named
+// directly lost DEJA_INDEX_DIR and XDG_CACHE_HOME, opened a second index under
+// ~/.cache/deja and never saw the live stamps the hooks wrote, and the asking
+// session came back in its own recall (#5269, #5124). The launcher carries
+// the install-time values as fallbacks, as it does for hooks.
+func mcpLaunchCommandArgs(exe string, uninstall bool) (string, []string) {
+	return mcpCommandArgs(hookExeFor(exe, uninstall))
+}
+
+// hookRun is a hook command line: the binary, quoted where the shell running
+// it would otherwise split the path, and the subcommand and flags beside it.
+//
+// The launcher lives under the home directory, so a home with a space in its
+// name made every hook entry deja writes unrunnable — 34 of them on one stand,
+// and a shell says so plainly: `sh: /tmp/deja: No such file or directory`.
+// Windows is where an ordinary machine meets this (`C:\Users\Name Surname`,
+// `C:\Program Files`), and there the entry names the binary itself, since the
+// launcher is unix-only (#3692).
+//
+// Only where the line is a command string a shell parses. The generated
+// plugins interpolate the path into JavaScript with %q and are already quoted
+// for that language; MCP entries keep the command and its arguments in
+// separate fields and must stay unquoted.
+func hookRun(exe string, rest ...string) string {
+	return strings.Join(append([]string{hookCommandQuote(exe)}, rest...), " ")
+}
+
+// hookCommandQuote quotes a path for the shell the harness hands a hook
+// command to, and leaves an ordinary path alone: a config full of quoted paths
+// where none of them needs it is a diff in somebody's dotfiles for nothing.
+//
+// cmd.exe does not know single quotes and a Windows path cannot contain a
+// double quote, so the two platforms quote differently — and a backslash is
+// not a reason to quote on Windows, where every path has them.
+func hookCommandQuote(s string) string {
+	return hookCommandQuoteFor(runtime.GOOS, s)
+}
+
+// On Windows the path is written with forward slashes. Claude Code hands its
+// hooks to Git Bash, which strips an unquoted backslash, so the command named
+// a file that does not exist and every hook exited 127 (#4116). Windows opens
+// a path with forward slashes the same way, and so do cmd.exe and PowerShell.
+func hookCommandQuoteFor(goos, s string) string {
+	if goos == "windows" {
+		s = strings.ReplaceAll(s, `\`, "/")
+		if !strings.ContainsAny(s, " \t") {
+			return s
+		}
+		return `"` + s + `"`
+	}
+	return shellQuoteIfNeeded(s)
+}
+
+// hookCommandExe is the path a hook entry should name. It writes the launcher
+// and returns it; if that cannot be done — a read-only home, a platform
+// without one — the caller gets the binary's own path and the wiring is what
+// it always was.
+func hookCommandExe(exe string) string {
+	p, err := writeDejaLauncher(exe)
+	if err != nil || p == "" {
+		return exe
+	}
+	return p
+}
+
+// writeDejaLauncher writes the resolver and returns its path.
+func writeDejaLauncher(exe string) (string, error) {
+	path := dejaLauncherPath()
+	if path == "" {
+		return "", nil
+	}
+	// Recorded before it is made, the way every other writer records what it
+	// creates: the prune walks what the record names, and a directory missing
+	// from it stands empty after a full uninstall (#3698, #3725).
+	noteCreatedDirs(filepath.Dir(path))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	old, err := os.ReadFile(path)
+	next := []byte(dejaLauncherScript(exe))
+	if err != nil || string(old) != string(next) {
+		if err := os.WriteFile(path, next, 0o755); err != nil {
+			return "", err
+		}
+	}
+	// WriteFile keeps the mode of a file that is already there, and the same
+	// bytes are not written at all: a launcher that lost its exec bit stayed
+	// that way through the reinstall doctor recommends, and every hook exited
+	// 126.
+	if fi, err := os.Stat(path); err == nil && fi.Mode()&0o111 == 0 {
+		if err := os.Chmod(path, 0o755); err != nil {
+			return "", err
+		}
+	}
+	return path, nil
+}
+
+// removeDejaLauncher takes the resolver out. Only on a full uninstall: a
+// target that stays wired is still pointing at it.
+func removeDejaLauncher() {
+	path := dejaLauncherPath()
+	if path == "" {
+		return
+	}
+	_ = os.Remove(path)
+	// And the directory it lived in, while it is empty and deja's own. It was
+	// the one directory a full uninstall left standing: found by installing
+	// every target into a stand and listing what remained (#3725).
+	pruneCreatedDir(filepath.Dir(path))
+}
+
+// dejaLauncherScript is the resolver itself. Order matters: an explicit
+// DEJA_BIN, then the path this install ran from, then where the installers
+// put it (launcherCandidates), and the PATH last, since a GUI-launched agent
+// hands its hooks a short one.
+//
+// It ends by exiting 0 with nothing on stdout. A hook that cannot find deja has
+// no memory to add, and saying so on stderr every turn — or failing, which some
+// harnesses read as a reason to stop — costs the reader more than silence.
+func dejaLauncherScript(exe string) string {
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("# generated by deja install — finds the deja binary at run time so an\n")
+	b.WriteString("# upgrade that moves it does not have to rewrite every agent's config.\n")
+	b.WriteString("# Safe to delete; `deja install` writes it again.\n")
+	if env := launcherEnv(os.Environ()); len(env) > 0 {
+		b.WriteString("# Where deja keeps its index and settings, as `deja install` saw it, for a\n")
+		b.WriteString("# host that starts hooks without your environment. Yours wins when set.\n")
+		for _, kv := range env {
+			fmt.Fprintf(&b, "[ -n \"$%s\" ] || export %s=%s\n", kv[0], kv[0], shellQuote(kv[1]))
+		}
+	}
+	b.WriteString("if [ -n \"$DEJA_BIN\" ] && [ -x \"$DEJA_BIN\" ]; then exec \"$DEJA_BIN\" \"$@\"; fi\n")
+	b.WriteString("for c in \\\n")
+	for _, c := range launcherCandidates(exe) {
+		fmt.Fprintf(&b, "  %s \\\n", shellQuote(c))
+	}
+	b.WriteString("  ; do\n")
+	b.WriteString("  [ -x \"$c\" ] && exec \"$c\" \"$@\"\n")
+	b.WriteString("done\n")
+	b.WriteString("c=$(command -v deja 2>/dev/null) || c=\"\"\n")
+	b.WriteString("[ -n \"$c\" ] && exec \"$c\" \"$@\"\n")
+	b.WriteString("exit 0\n")
+	return b.String()
+}
+
+// launcherWellKnown is where the supported installers leave the binary. A
+// variable so a test can take the machine's own deja out of the list it is
+// exercising.
+var launcherWellKnown = []string{"/usr/local/bin/deja", "/opt/homebrew/bin/deja", "/home/linuxbrew/.linuxbrew/bin/deja", "/usr/bin/deja"}
+
+// launcherCandidates are the paths tried before the PATH, the install's own
+// first. The rest are where the three supported installers leave the binary,
+// so a machine whose PATH the harness does not inherit — a GUI-launched agent
+// has a short one — still finds it.
+func launcherCandidates(exe string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	add := func(p string) {
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	add(exe)
+	home := sources.Home()
+	if home != "" {
+		add(filepath.Join(home, ".local", "bin", "deja"))
+		add(filepath.Join(home, "bin", "deja"))
+	}
+	for _, p := range launcherWellKnown {
+		add(p)
+	}
+	return out
+}

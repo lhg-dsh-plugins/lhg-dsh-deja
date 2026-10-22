@@ -1,0 +1,102 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# Two runs publishing the same rolling release would race over the tag.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Snapshot build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # A nightly that rebuilds an unchanged tree only wastes minutes and
+      # resets the release date, making the tag look fresher than the code.
+      - id: changed
+        name: Check for new commits
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          last=$(gh release view nightly --json targetCommitish,tagName \
+            --jq .targetCommitish 2>/dev/null || true)
+          head=$(git rev-parse HEAD)
+          if [ "$last" = "$head" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.changed.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          cache: false
+
+      # goreleaser catalogs an SBOM per archive and shells out to syft to do
+      # it; without this the build gets all the way to archiving and dies.
+      - if: steps.changed.outputs.run == 'true'
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+
+      # The nightly is only worth shipping if it passes what a release passes.
+      - if: steps.changed.outputs.run == 'true'
+        run: go test ./...
+
+      # What an upgrade costs a machine that has been running deja for a while.
+      # Every test builds its store with the binary under test, so a format
+      # change is only ever read by the build that wrote it — the one thing the
+      # suite cannot ask (#3505). Here because it downloads five release
+      # archives and takes minutes, which is a nightly's business and not a
+      # pull request's.
+      - if: steps.changed.outputs.run == 'true'
+        name: Upgrade matrix over the released binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          go build -o "$RUNNER_TEMP/deja" ./cmd/deja
+          sh scripts/migrate-matrix.sh --check "$RUNNER_TEMP/deja"
+
+      - if: steps.changed.outputs.run == 'true'
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          distribution: goreleaser
+          version: latest
+          # Signing and attestation belong to tagged releases: keyless cosign
+          # needs an OIDC identity this job deliberately does not carry.
+          args: release --snapshot --clean --skip=sign
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # One rolling prerelease rather than a tag per night: the download URL
+      # stays stable and the releases page stays readable.
+      - if: steps.changed.outputs.run == 'true'
+        name: Publish the rolling nightly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          notes=$(cat <<NOTES
+          Built from $(git rev-parse --short HEAD) on $(date -u +%Y-%m-%d).
+
+          Unreleased code — use a tagged release unless you are testing something specific.
+
+          Download with: gh release download nightly
+          NOTES
+          )
+          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+          gh release create nightly dist/deja-vu_* dist/checksums.txt \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Nightly $(date -u +%Y-%m-%d)" \
+            --notes "$notes"

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Qwen Code stores its history — session format</title>
+<meta name="description" content="Where Qwen Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/qwen.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Qwen Code stores its history — session format">
+<meta property="og:description" content="Where Qwen Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/qwen.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Qwen Code stores its history — session format">
+<meta name="twitter:description" content="Where Qwen Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Qwen Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Qwen Code session format","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/qwen.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/qwen.html","name":"Qwen Code session format","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html" aria-current="page">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Qwen Code session format</h1>
+<h2 id="store-and-files">Store and files</h2>
+<p>Qwen Code writes sessions below <code>${DEJA_QWEN_ROOT:-~/.qwen}/projects/&lt;encoded-project&gt;/chats/*.jsonl</code>. The project directory uses the same slash-and-hyphen encoding as Claude Code. The <code>chats/</code> directory is part of Qwen&#39;s layout; only JSONL files directly inside it are session streams. A sub-agent&#39;s log, <code>subagents/&lt;session&gt;/agent-&lt;id&gt;.jsonl</code> in the same project directory, is read as a session of its own naming the parent session: the task, the files it changed and its last turns, so <code>deja blame</code> names the sub-agent that wrote a file (#5223). <code>DEJA_INCLUDE_SUBAGENTS=1</code> takes the whole run and <code>=0</code> skips them.</p>
+<p>The Qwen configuration directory remains <code>~/.qwen</code> for installer settings. <code>DEJA_QWEN_ROOT</code> relocates session reads only.</p>
+<h2 id="records">Records</h2>
+<p>Each line is a JSON object with <code>type</code>, <code>sessionId</code>, <code>timestamp</code>, and a <code>message</code> object. Message text is in <code>message.parts</code>; parts marked <code>thought: true</code> are reasoning and are excluded.</p>
+<pre><code class="language-json">{&#34;type&#34;:&#34;assistant&#34;,&#34;sessionId&#34;:&#34;session-7&#34;,&#34;timestamp&#34;:&#34;2026-07-17T09:00:01Z&#34;,&#34;message&#34;:{&#34;role&#34;:&#34;model&#34;,&#34;parts&#34;:[{&#34;text&#34;:&#34;The failing check is in parser.go.&#34;}]}}</code></pre>
+<p><code>message.role</code> <code>model</code> maps to <code>assistant</code> and <code>user</code> maps to <code>user</code>; when it is absent, the top-level <code>type</code> is used. Parts with text are joined with newlines. RFC 3339 and numeric Unix timestamps are accepted.</p>
+<p>The work sits in the same <code>parts</code> list as <code>functionCall</code> and <code>functionResponse</code>. Calls become command, file and edit records (Qwen uses Gemini&#39;s tool names), and a <code>tool_result</code> record&#39;s <code>functionResponse</code> becomes tool output.</p>
+<h2 id="wiring">Wiring</h2>
+<ul>
+<li><strong>MCP</strong>: <code>deja install qwen</code> adds <code>mcpServers.deja</code> to <code>~/.qwen/settings.json</code>.</li>
+<li><strong>Skill</strong>: the shared <code>~/.agents/skills/deja-history/SKILL.md</code>. Qwen lists skills under <code>/skills</code>, so the skill is also the command.</li>
+<li><strong>Auto-recall</strong>: <code>deja install qwen-auto</code> adds hooks to the same <code>settings.json</code>: <code>SessionStart</code> (digest), <code>UserPromptSubmit</code> (per-prompt recall), <code>PostToolUseFailure</code> on <code>run_shell_command</code> (the earlier fix for a failed command), <code>PostToolUse</code> on <code>read_file|edit|write_file</code> (the line deja keeps for that file), <code>PreCompact</code> and <code>SessionEnd</code> (the session you quit is back in the next one&#39;s MCP recall).</li>
+</ul>
+<h2 id="resume">Resume</h2>
+<p><code>qwen -r &lt;id&gt;</code> reopens a session by id, and the id is the chat file&#39;s name —</p>
+<p>the same one deja indexes. The command has to run in the project directory:</p>
+<p><code>qwen sessions list</code> shows only the current project&#39;s sessions, so from</p>
+<p>anywhere else the id resolves to nothing. deja takes that directory from the</p>
+<p><code>cwd</code> the transcript records, or from the encoded folder name for a transcript</p>
+<p>that records none, and prints <code>cd &lt;project&gt; &amp;&amp; qwen -r &lt;id&gt;</code>. When the recorded</p>
+<p>directory is gone, or deja cannot tell which directory the session ran in,</p>
+<p>resume refuses and points at <code>deja show &lt;id&gt;</code>: the bare command would only get</p>
+<p>&#34;No saved session found&#34;. On the screen bare <code>deja</code> opens, <code>r</code> runs the same</p>
+<p>command for the picked session and <code>o</code> continues it in another agent.</p>
+<h2 id="status-line">Status line</h2>
+<p><code>deja install qwen-auto</code> sets <code>ui.statusLine</code> in <code>settings.json</code> to a command</p>
+<p>with <code>refreshInterval: 1</code>. Qwen pipes <code>session_id</code> and the workspace but no</p>
+<p>transcript path, so deja finds the session by its id. A status line already</p>
+<p>set there is left alone. Rendered live on 0.20.0.</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li>JSONL can end in a partial line while Qwen is writing. Malformed lines are skipped.</li>
+<li>System and other control records do not become messages.</li>
+<li>Project path encoding is ambiguous because <code>-</code> represents both a separator and a hyphen. deja checks the local filesystem before using a two-segment fallback.</li>
+</ul>
+<p><strong>Last verified:</strong> 2026-09-07</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

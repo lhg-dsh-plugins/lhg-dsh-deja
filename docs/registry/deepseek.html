@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where DeepSeek Harness stores its history — session format</title>
+<meta name="description" content="Where DeepSeek Harness writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/deepseek.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where DeepSeek Harness stores its history — session format">
+<meta property="og:description" content="Where DeepSeek Harness writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/deepseek.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where DeepSeek Harness stores its history — session format">
+<meta name="twitter:description" content="Where DeepSeek Harness writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where DeepSeek Harness writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"DeepSeek Harness","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/deepseek.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/deepseek.html","name":"DeepSeek Harness","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html" aria-current="page">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>DeepSeek Harness</h1>
+<ul>
+<li><strong>ID</strong>: <code>deepseek</code></li>
+<li><strong>Store</strong>: <code>${DSH_HOME:-~/.dsh}/sessions/&lt;workspace-slug&gt;/session-&lt;uuid&gt;/session.v4.jsonl.zstd</code>, one append-only log per session. The number is the format generation: earlier dsh builds wrote <code>session.jsonl.zstd</code> and <code>session.v3.jsonl.zstd</code>, and when dsh opens an older session it writes the whole history into a new-generation file and leaves the old one beside it, unchanged. deja reads the newest generation in each session directory and accepts any <code>session.vN.jsonl</code>, raw or zstd-framed, so the next bump is read rather than skipped</li>
+<li><strong>Read override</strong>: <code>DEJA_DEEPSEEK_ROOT</code> (sessions root), <code>DSH_HOME</code> (the harness&#39;s own home, also honored)</li>
+<li><strong>Format</strong>: JSONL, written as consecutive zstd frames by default; raw lines</li>
+</ul>
+<p>are a configuration and both are read</p>
+<ul>
+<li><strong>Prerequisite</strong>: the <code>zstd</code> CLI, for the same reason Zed needs it. Without</li>
+</ul>
+<p>it the sessions are found and none of them can be read, and <code>deja index</code> says</p>
+<p>so rather than reporting an empty store.</p>
+<p>The first line is the session header — `{&#34;type&#34;:&#34;session&#34;,&#34;id&#34;:&#34;session-&lt;uuid&gt;&#34;,</p>
+<p>&#34;createdAt&#34;:&lt;ms&gt;,&#34;cwd&#34;:&#34;…&#34;}<code> — and the project comes from that </code>cwd`. Every</p>
+<p>line after it is one event: <code>{type, seq, time, data}</code>.</p>
+<p>These event types carry the conversation:</p>
+<ul>
+<li><code>user/message</code> with <code>data.source.kind == &#34;user&#34;</code> is what a person typed. The</li>
+</ul>
+<p>same type also carries what plugins splice into the turn — the sandbox policy</p>
+<p>snapshot, the skill catalogue — under other source kinds, and those are the</p>
+<p>harness describing itself rather than history worth recalling.</p>
+<ul>
+<li><code>assistant/message</code> is the agent&#39;s turn, complete: <code>data.message.content</code> is a</li>
+</ul>
+<p>block array of <code>text</code> and <code>reasoning</code>. Only the text is recalled; reasoning is</p>
+<p>the model thinking out loud rather than what it told the person.</p>
+<ul>
+<li><code>assistant/chunk</code> with <code>chunk.type == &#34;text-delta&#34;</code> is the same answer as it</li>
+</ul>
+<p>streamed. It is read only as a fallback, for a run interrupted before the</p>
+<p>complete message landed — otherwise the answer would land twice.</p>
+<ul>
+<li><code>text-chunks</code> is a packed row: a run of three or more consecutive deltas</li>
+</ul>
+<p>stored as one line with the pieces in <code>data.texts</code>. A reader that knows only</p>
+<p><code>assistant/chunk</code> keeps the stray deltas and loses every long answer, which is</p>
+<p>exactly the interrupted case the fallback exists for.</p>
+<ul>
+<li><code>tool/result</code> is tool output, whose content nests a <code>tool-result</code> block around</li>
+</ul>
+<p>the text; it is kept under the <code>tool-output</code> role so search can tell it from</p>
+<p>speech. From v4 the message is the result itself: <code>role: &#34;tool&#34;</code>, the text</p>
+<p>blocks as its content and <code>isError</code> on the message, which is where a refused</p>
+<p>edit is read from.</p>
+<p><code>session/title</code> gives the session its name; when the model never answered, the</p>
+<p>harness falls back to the first prompt.</p>
+<ul>
+<li><strong>MCP</strong>: <code>deja install deepseek</code> writes <code>$DSH_HOME/cordis.patch.yml</code>, the</li>
+</ul>
+<p>home-level patch layer every profile composes over its own. An MCP server here</p>
+<p>is a plugin row (<code>@deepseek-ai/dsh-mcp-client</code>) inside an <code>insert:</code> list — a</p>
+<p>bare row is rejected with <code>entry &#34;mcp-deja&#34; not found</code>, because a patch entry</p>
+<p>addresses a row that already exists. After it dsh lists one tool, <code>deja</code>,</p>
+<p>called with a <code>mode</code> of <code>recall</code>, <code>context</code>, <code>blame</code>, <code>fix</code>, <code>how</code>,</p>
+<p><code>orient</code>, <code>remember</code> or <code>handoff</code>.</p>
+<ul>
+<li><strong>Skill</strong>: the shared <code>~/.agents/skills/deja-history/SKILL.md</code>. dsh splices a</li>
+</ul>
+<p>skill catalogue into the turn and reads that directory, so it needs no file of</p>
+<p>its own — checked by asking a running dsh to list its skills.</p>
+<ul>
+<li><strong>Command</strong>: <code>deja install deepseek</code> also writes a plugin at</li>
+</ul>
+<p><code>$DSH_HOME/plugins/deja/command.js</code> and names it from the same layer, because</p>
+<p>dsh registers slash commands in code (<code>ctx.commands.register</code>) rather than</p>
+<p>from a directory of markdown. A profile row may name an absolute path, which</p>
+<p>is how deja ships one without publishing a package. Three details fail the</p>
+<p>whole profile load rather than skipping the plugin, and each was found by</p>
+<p>running it: the dependency is declared as <code>apply.inject</code>, the field is</p>
+<p><code>handler</code> and not <code>handle</code>, and a row naming a file that is not there yet</p>
+<p>takes the profile down — so the plugin is written before the layer and the</p>
+<p>layer is rewritten before the plugin is removed. The command plane itself is</p>
+<p>a UI service, so <code>/deja</code> lives in the web profile; a headless run has no</p>
+<p>command adapter, and what a headless boot proves is that the plugin registers</p>
+<p>cleanly.</p>
+<ul>
+<li><strong>Auto-recall</strong>: <code>deja install deepseek-auto</code> writes a second plugin at</li>
+</ul>
+<p><code>$DSH_HOME/plugins/deja/auto.js</code>. Recall arrives through</p>
+<p><code>ctx.systemPrompt.context</code>, evaluated on every assembly. The obvious</p>
+<p>alternative — a middleware on <code>agent/pre-step</code> that splices a message into</p>
+<p>the step — loads, completes the turn and never reaches the model: a later</p>
+<p>listener rebuilds its answer from the payload and the added message is</p>
+<p>dropped with nothing reported. The plain</p>
+<p><code>deja install deepseek</code> target keeps the MCP server and <code>/deja</code> but writes no</p>
+<p>such plugin, and removes it along with its row when someone drops back to it.</p>
+<p>Verified against a local model with no tools in play: dsh answered a question</p>
+<p>about a pool size that only the injected block carried.</p>
+<p>The same plugin listens on <code>tools/post-execute</code>, which runs on every tool</p>
+<p>result: after a <code>read</code>, <code>edit</code>, <code>write</code> or <code>str_replace_editor</code> call it adds</p>
+<p><code>deja hook-tool</code>&#39;s line about the file, and after a <code>bash</code> or <code>pwsh</code> whose result ends in <code>[exit code: N]</code> or <code>[killed by signal: X]</code></p>
+<p>(the last line only, as dsh&#39;s own parser reads it) it adds</p>
+<p><code>deja hook-tool-after</code>&#39;s earlier fix for that error, both as</p>
+<p><code>additionalContexts</code>, which dsh hands the model on the next step. The marker</p>
+<p>is dropped before the lookup, as the index drops it. Measured on dsh</p>
+<p>0.1.1-rc.2: a bash that failed with an error two earlier sessions had fixed</p>
+<p>was followed, in the next request, by a <code>&lt;deja-recall&gt;</code> message naming the</p>
+<p>command that fixed it. <code>tools/execute</code>, the seam before the call, has no</p>
+<p>channel to the model (#4293). A session the plugin saw created is ended</p>
+<p>with <code>deja hook-session-end</code> at <code>session/disposed</code>, or at process exit,</p>
+<p>since headless 0.1.1-rc.2 exits without disposing it. A <code>compaction/start</code></p>
+<p>session event runs <code>deja hook-precompact</code> on the flushed log, and the packet</p>
+<p>rides the recall of the next step.</p>
+<p>The workspace deja is asked about is the session&#39;s, read from the session</p>
+<p>header (<code>agent.session.header.cwd</code>). One <code>dsh web</code> process serves sessions</p>
+<p>from every workspace and never changes directory, so <code>process.cwd()</code> is only</p>
+<p>where dsh was launched and is kept as the fallback. The plugin directory also</p>
+<p>holds a <code>package.json</code> declaring <code>&#34;type&#34;: &#34;module&#34;</code>: Node takes a file&#39;s</p>
+<p>module type from the nearest <code>package.json</code> above it, and a home directory</p>
+<p>whose own <code>package.json</code> declares CommonJS otherwise makes dsh refuse both</p>
+<p>plugins with &#34;Failed to load the ES module&#34;.</p>
+<ul>
+<li><strong>Resume</strong>: none. The launcher&#39;s examples mention a tui profile taking</li>
+</ul>
+<p><code>--resume &lt;session&gt;</code>, but this release ships no bundle for one — the two apps</p>
+<p>are <code>headless</code>, which takes a task and exits, and <code>web</code>, whose flags are all</p>
+<p>about the server. Reopening a conversation is something the web sidebar does,</p>
+<p>so there is nothing for deja to print.</p>
+<ul>
+<li><strong>Handoff</strong>: exec, <code>dsh --profile headless &lt;prompt&gt;</code> answers it once and exits.</li>
+</ul>
+<p>Format verified by installing dsh 0.1.1-rc.2, pointing it at a local model over</p>
+<p>an OpenAI-compatible route, and reading what it wrote across sessions that</p>
+<p>answered, called a tool, were interrupted mid-answer, and failed before</p>
+<p>answering (<code>@deepseek-ai/dsh-session-persistence-jsonl</code>). The v4 generation</p>
+<p>was checked against the source of <code>@deepseek-ai/dsh-base</code> 0.1.7-rc.2 (dsh</p>
+<p>2.0.15): <code>dsh-session-format</code> names generation N <code>session.vN.jsonl</code>, and</p>
+<p><code>dsh-session-format-v3-to-v4</code> changes the tool-result shape and namespaces</p>
+<p>plugin sources and block types, leaving the event envelope as it was.</p>
+<p><strong>Last verified:</strong> 2026-10-02</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

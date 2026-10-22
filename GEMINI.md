@@ -1,0 +1,34 @@
+# deja
+
+This file is loaded in every session the extension is enabled in, so it stays
+short. The detail lives in the tool descriptions.
+
+Search deja before re-deriving past work: when the user refers to an earlier
+session or decision, before debugging an error, and before implementing
+something that may already exist. Also when the user says something of theirs
+already exists that you have no record of ("I already have X", "we use Y for
+this"), and before telling them something on this machine does not exist. It searches this machine's own history across
+every AI coding tool used on it, further back than deja itself was installed.
+
+Before your first edit in a task, and again before you call a change done or
+ready to merge, call deja with mode recall and the task's key nouns (file,
+package, feature, setting). A rule, a rejected option or a check it returns
+outranks your defaults: follow it and say so in one line.
+
+One tool, `deja`, with a `mode`:
+
+- `recall` — search with the most specific token available: an exact error
+  string, a function name, a file path, a flag.
+- `context` — the full digest of the best-matching session, once a hit looks
+  right and the reasoning behind it matters.
+
+If recalled history genuinely helped, say so in one line: what was recalled and
+how you used it. Say nothing about recalls that did not help.
+
+deja is a binary you install yourself; this extension only points Gemini at it:
+
+    brew install deja-vu
+
+or
+
+    curl -fsSL https://raw.githubusercontent.com/vshulcz/deja-vu/main/install.sh | sh

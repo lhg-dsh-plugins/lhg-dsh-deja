@@ -1,0 +1,424 @@
+package sources
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/vshulcz/deja-vu/internal/model"
+)
+
+// Roo Code (github.com/RooCodeInc/Roo-Code) is a Cline fork whose VS Code
+// extension (rooveterinaryinc.roo-cline) keeps tasks under the host's
+// globalStorage:
+//
+//	tasks/<taskId>/api_conversation_history.json  (transcript, Cline shape)
+//	tasks/<taskId>/history_item.json              (id, ts, task, workspace)
+//	tasks/_index.json                             (index; not needed here)
+//
+// Verified against Roo-Code source (src/shared/globalFileNames.ts,
+// src/core/task-persistence) — the transcript format matches Cline's legacy
+// store, but metadata is per-task history_item.json instead of a global
+// taskHistory.json. The turns are indexed for their text and their calls
+// alike — a command, the files a call named, and both sides of an edit — and
+// the same envelope unwrapping applies.
+
+// RooExtensionID is the publisher and name of the VS Code extension, which is
+// also the directory its settings live in.
+const RooExtensionID = "rooveterinaryinc.roo-cline"
+
+func RooRoots() []string {
+	if list := os.Getenv("DEJA_ROO_ROOTS"); list != "" {
+		var out []string
+		for _, p := range filepath.SplitList(list) {
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	var bases []string
+	switch runtime.GOOS {
+	case "darwin":
+		app := filepath.Join(Home(), "Library", "Application Support")
+		for _, host := range []string{"Code", "Code - Insiders", "VSCodium", "Cursor", "Windsurf"} {
+			bases = append(bases, filepath.Join(app, host, "User", "globalStorage", RooExtensionID))
+		}
+	case "windows":
+		app := os.Getenv("APPDATA")
+		if app == "" {
+			app = filepath.Join(Home(), "AppData", "Roaming")
+		}
+		for _, host := range []string{"Code", "Code - Insiders", "VSCodium", "Cursor", "Windsurf"} {
+			bases = append(bases, filepath.Join(app, host, "User", "globalStorage", RooExtensionID))
+		}
+	default:
+		cfg := os.Getenv("XDG_CONFIG_HOME")
+		if cfg == "" {
+			cfg = filepath.Join(Home(), ".config")
+		}
+		for _, host := range []string{"Code", "Code - Insiders", "VSCodium", "Cursor", "Windsurf"} {
+			bases = append(bases, filepath.Join(cfg, host, "User", "globalStorage", RooExtensionID))
+		}
+	}
+	// The roo CLI runs the same extension against a VS Code shim, so its
+	// tasks land under a mock storage root rather than any editor's. Same
+	// layout, so the parser needs nothing new — only the path.
+	bases = append(bases, RooCLIRoot())
+	bases = append(bases, rooCustomStorageRoots()...)
+	var out []string
+	for _, b := range bases {
+		if fi, err := os.Stat(b); err == nil && fi.IsDir() {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// rooCustomStorageRoots reads the `roo-cline.customStoragePath` setting each
+// VS Code host may carry. Roo writes it with ConfigurationTarget.Global, so it
+// lives in the host's User/settings.json, and when it is set the tasks are
+// there and nowhere else — deja would otherwise index none of that history.
+func rooCustomStorageRoots() []string {
+	var out []string
+	for _, settings := range vsCodeUserSettingsPaths() {
+		b, err := readJSONFile(settings)
+		if err != nil {
+			continue
+		}
+		// The file is JSONC in practice: comments and trailing commas are
+		// normal, so a strict decode would silently skip real users.
+		var cfg map[string]any
+		if json.Unmarshal(stripJSONCComments(b), &cfg) != nil {
+			continue
+		}
+		if p, _ := cfg["roo-cline.customStoragePath"].(string); strings.TrimSpace(p) != "" {
+			out = append(out, expandTilde(strings.TrimSpace(p)))
+		}
+	}
+	return out
+}
+
+// vsCodeUserSettingsPaths is the settings file for each host Roo runs in, in
+// the same order as the storage roots above.
+func vsCodeUserSettingsPaths() []string {
+	hosts := []string{"Code", "Code - Insiders", "VSCodium", "Cursor", "Windsurf"}
+	var out []string
+	switch runtime.GOOS {
+	case "darwin":
+		app := filepath.Join(Home(), "Library", "Application Support")
+		for _, host := range hosts {
+			out = append(out, filepath.Join(app, host, "User", "settings.json"))
+		}
+	case "windows":
+		app := os.Getenv("APPDATA")
+		if app == "" {
+			app = filepath.Join(Home(), "AppData", "Roaming")
+		}
+		for _, host := range hosts {
+			out = append(out, filepath.Join(app, host, "User", "settings.json"))
+		}
+	default:
+		cfg := os.Getenv("XDG_CONFIG_HOME")
+		if cfg == "" {
+			cfg = filepath.Join(Home(), ".config")
+		}
+		for _, host := range hosts {
+			out = append(out, filepath.Join(cfg, host, "User", "settings.json"))
+		}
+	}
+	return out
+}
+
+// stripJSONCComments removes // and /* */ comments outside strings. VS Code
+// settings files carry them by default, and a strict decode would treat every
+// commented settings file as absent.
+func stripJSONCComments(b []byte) []byte {
+	out := make([]byte, 0, len(b))
+	inString, escaped := false, false
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		if inString {
+			out = append(out, c)
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch {
+		case c == '"':
+			inString = true
+			out = append(out, c)
+		case c == '/' && i+1 < len(b) && b[i+1] == '/':
+			for i < len(b) && b[i] != '\n' {
+				i++
+			}
+			out = append(out, '\n')
+		case c == '/' && i+1 < len(b) && b[i+1] == '*':
+			i += 2
+			for i+1 < len(b) && (b[i] != '*' || b[i+1] != '/') {
+				i++
+			}
+			i++
+		default:
+			out = append(out, c)
+		}
+	}
+	return dropTrailingCommas(out)
+}
+
+// dropTrailingCommas removes the comma VS Code tolerates before a closing
+// brace or bracket. Settings files written by hand have them, and without
+// this the whole file decodes as invalid and the setting is missed.
+func dropTrailingCommas(b []byte) []byte {
+	out := make([]byte, 0, len(b))
+	inString, escaped := false, false
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		if inString {
+			out = append(out, c)
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		if c == '"' {
+			inString = true
+			out = append(out, c)
+			continue
+		}
+		if c == ',' {
+			j := i + 1
+			for j < len(b) && (b[j] == ' ' || b[j] == '\t' || b[j] == '\n' || b[j] == '\r') {
+				j++
+			}
+			if j < len(b) && (b[j] == '}' || b[j] == ']') {
+				continue
+			}
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func expandTilde(p string) string {
+	if p == "~" {
+		return Home()
+	}
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		return filepath.Join(Home(), p[2:])
+	}
+	return p
+}
+
+// RooCLIRoot is where @roo-code/cli keeps tasks and settings: it runs the
+// extension against a VS Code shim whose storage base is ~/.vscode-mock.
+func RooCLIRoot() string {
+	if p := os.Getenv("DEJA_ROO_CLI_ROOT"); p != "" {
+		return p
+	}
+	return filepath.Join(Home(), ".vscode-mock", "global-storage")
+}
+
+// rooCLISessionID is the shape the Roo CLI accepts after --session-id: it
+// validates the argument as a UUID and refuses anything else, so a task
+// numbered the old way is not one this command can reopen.
+var rooCLISessionID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// RooCLITask reports the session id and workspace of a task the Roo CLI wrote,
+// and empty strings for anything else. The CLI lists tasks from its own storage
+// path alone, so a task from the editor is not something `roo --session-id`
+// can find even though both stores hold the same file names (measured on
+// @roo-code/cli 0.1.17).
+func RooCLITask(path string) (id, workspace string) {
+	root := RooCLIRoot()
+	if root == "" || !strings.HasPrefix(filepath.Clean(path), filepath.Clean(root)+string(filepath.Separator)) {
+		return "", ""
+	}
+	dir := filepath.Dir(path)
+	id = filepath.Base(dir)
+	if !rooCLISessionID.MatchString(id) {
+		return "", ""
+	}
+	var item rooHistoryItem
+	if b, err := readJSONFile(filepath.Join(dir, "history_item.json")); err == nil {
+		_ = json.Unmarshal(b, &item)
+	}
+	return id, item.Workspace
+}
+
+func RooTaskFiles() []string {
+	var files []string
+	for _, root := range RooRoots() {
+		files = append(files, walkFiles(filepath.Join(root, "tasks"), func(p string) bool {
+			return filepath.Base(p) == "api_conversation_history.json"
+		})...)
+	}
+	return files
+}
+
+func LoadRoo() []model.Session { return parseFiles(RooTaskFiles(), ParseRooTask) }
+
+type rooHistoryItem struct {
+	ID        string `json:"id"`
+	TS        int64  `json:"ts"`
+	Task      string `json:"task"`
+	Workspace string `json:"workspace"`
+}
+
+func ParseRooTask(path string) ([]model.Session, error) {
+	return parseRooShapedTask(path, "roo")
+}
+
+// parseRooShapedTask reads one task directory of the Roo store. Kilo Code is a
+// Roo fork and its extension writes the same three files, so the only thing
+// that differs is the harness a session belongs to (#3643).
+func parseRooShapedTask(path, harness string) ([]model.Session, error) {
+	b, err := readJSONFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var turns []struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+		// Roo stamps every turn in epoch milliseconds. A float, so a value
+		// written with a fraction does not fail the whole task.
+		TS float64 `json:"ts"`
+		// Condensing appends a summary turn flagged isSummary; the sliding
+		// window leaves a marker turn flagged isTruncationMarker.
+		IsSummary          bool `json:"isSummary"`
+		IsTruncationMarker bool `json:"isTruncationMarker"`
+	}
+	if err := json.Unmarshal(b, &turns); err != nil {
+		// One document per task, as in cline: a file that will not parse is a
+		// path deja could not read, not a line (#2232).
+		diagFileError(path, err)
+		return nil, nil
+	}
+	taskDir := filepath.Dir(path)
+	taskID := filepath.Base(taskDir)
+	s := model.Session{Harness: harness, ID: harness + "-task-" + taskID, Path: path, Project: harness}
+	base := time.Time{}
+	var item rooHistoryItem
+	if hb, err := readJSONFile(filepath.Join(taskDir, "history_item.json")); err == nil && json.Unmarshal(hb, &item) == nil {
+		s.Title = firstLineTrim(item.Task)
+		if item.Workspace != "" {
+			s.Project = projectName(item.Workspace)
+		}
+		if item.TS > 0 {
+			base = time.UnixMilli(item.TS)
+		}
+	}
+	if base.IsZero() {
+		if fi, err := os.Stat(path); err == nil {
+			base = fi.ModTime()
+		}
+	}
+	contents := make([]json.RawMessage, len(turns))
+	for i, m := range turns {
+		contents[i] = m.Content
+	}
+	xmlEra := rooXMLEra(contents)
+	exits := commandExits{}
+	for ti, m := range turns {
+		if m.Role != "user" && m.Role != "assistant" {
+			continue
+		}
+		// A turn's own ts first: history_item's is when the task was last
+		// touched, so counting seconds from it put a long task at its end and
+		// past the clock (#4420). A turn without one keeps that scheme.
+		ts := base.Add(time.Duration(ti) * time.Second)
+		if m.TS > 0 {
+			ts = time.UnixMilli(int64(m.TS))
+		}
+		if m.IsTruncationMarker {
+			// "[Sliding window truncation: N messages hidden …]": the
+			// extension's note, not the person's words.
+			continue
+		}
+		if m.IsSummary {
+			if text := rooSummaryText(m.Content); text != "" {
+				s.Touch(ts)
+				s.Messages = append(s.Messages, model.Message{Role: RoleSummary, Text: text, Time: ts})
+			}
+			continue
+		}
+		text := clineContentText(m.Content)
+		if m.Role == "user" {
+			// A result of the XML era is a text block, not a tool_result
+			// (#4424), so the person's words are what is left beside it.
+			results, words := rooUserTurn(m.Content, xmlEra)
+			tool := append(clineTurnToolOutput(m.Content, ts), rooLegacyToolOutput(results, ts)...)
+			if len(tool) > 0 {
+				s.Touch(ts)
+				s.Messages = append(s.Messages, tool...)
+			}
+			clineJoinExits(s.Messages, len(s.Messages), m.Content, rooDialect, exits)
+			text = unwrapClineTask(words)
+		} else if work := rooWorkRecords(m.Content, ts, item.Workspace, xmlEra); len(work) > 0 {
+			s.Touch(ts)
+			from := len(s.Messages)
+			s.Messages = append(s.Messages, work...)
+			// The result of an execute_command says how it ended (#4530).
+			clineJoinExits(s.Messages, from, m.Content, rooDialect, exits)
+		}
+		if text == "" {
+			continue
+		}
+		s.Touch(ts)
+		s.Messages = append(s.Messages, model.Message{Role: m.Role, Text: text, Time: ts})
+	}
+	if len(s.Messages) == 0 {
+		return nil, nil
+	}
+	return []model.Session{s}, nil
+}
+
+// rooSummaryText is the summary a condense wrote. Roo up to 3.42 and the Kilo
+// Code extension (5.16) write it as an assistant turn whose text block is the
+// summary, beside reasoning and the tool calls the kept turns still need; Roo
+// 3.43 on, including the last release 3.54.0, as a user turn whose first block
+// is "## Conversation Summary" and the summary, followed by blocks of
+// <system-reminder> and environment details the extension adds for the model
+// (src/core/condense/index.ts summarizeConversation).
+func rooSummaryText(raw json.RawMessage) string {
+	var asString string
+	if json.Unmarshal(raw, &asString) == nil {
+		return strings.TrimSpace(asString)
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return ""
+	}
+	var parts []string
+	for _, blk := range blocks {
+		t := strings.TrimSpace(blk.Text)
+		if blk.Type != "text" || t == "" || strings.HasPrefix(t, "<system-reminder>") || strings.HasPrefix(t, "<environment_details>") {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(t, "## Conversation Summary"); ok {
+			t = strings.TrimSpace(rest)
+		}
+		if t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, "\n")
+}

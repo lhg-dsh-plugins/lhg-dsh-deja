@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where OpenClaw stores its history — session format</title>
+<meta name="description" content="Where OpenClaw writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/openclaw.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where OpenClaw stores its history — session format">
+<meta property="og:description" content="Where OpenClaw writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/openclaw.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where OpenClaw stores its history — session format">
+<meta name="twitter:description" content="Where OpenClaw writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where OpenClaw writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"OpenClaw","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/openclaw.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/openclaw.html","name":"OpenClaw","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html" aria-current="page">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>OpenClaw</h1>
+<ul>
+<li><strong>ID</strong>: <code>openclaw</code></li>
+<li><strong>Store</strong>: <code>${OPENCLAW_STATE_DIR:-~/.openclaw}/agents/&lt;agentId&gt;/agent/openclaw-agent.sqlite</code> since OpenClaw 2026.8 — session rows and transcript events in one per-agent SQLite database; before that, <code>agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.jsonl</code>, one append-only pi-format transcript per session, which the upgrade migrates into the database and leaves behind as an archive</li>
+<li><strong>Read override</strong>: <code>DEJA_OPENCLAW_ROOT</code> (agents root), <code>OPENCLAW_STATE_DIR</code> (OpenClaw&#39;s own state override, also honored)</li>
+<li><strong>Format</strong>: SQLite (<code>transcript_events.event_json</code>, one pi-format line per row, <code>session_windows</code> marking reset and rollover boundaries) or JSONL, append-cheap incremental parse from offset</li>
+<li><strong>Needs</strong>: the <code>sqlite3</code> CLI for the SQLite store, <code>zstd</code> for <code>.zst</code> delete archives</li>
+</ul>
+<p>OpenClaw&#39;s agent runtime is pi-lineage, so transcripts share pi&#39;s line shape:</p>
+<p>a <code>{&#34;type&#34;:&#34;session&#34;}</code> header (id, timestamp, optional cwd) followed by</p>
+<p><code>{&#34;type&#34;:&#34;message&#34;}</code> entries whose <code>message.content</code> is a block array. The</p>
+<p>shared pi parser handles both; when the header carries a <code>cwd</code>, it becomes</p>
+<p>the project key, otherwise sessions attribute to <code>openclaw-&lt;agentId&gt;</code>.</p>
+<p>The SQLite flip (openclaw/openclaw#98236, in 2026.8.x) moved the runtime</p>
+<p>store into <code>agent/openclaw-agent.sqlite</code>: <code>transcript_events</code> holds the same</p>
+<p>lines the JSONL held, keyed by session id and sequence, and <code>session_windows</code></p>
+<p>records every reset or rollover, whose earlier session stays in the store</p>
+<p>instead of being renamed away. deja reads the rows in sequence through the</p>
+<p>same line reader; a session that gained an event since the last pass comes</p>
+<p>back whole. Explicit deletes keep a compressed archive in</p>
+<p><code>session_transcript_archives</code>, which is not read. The fixture database is the</p>
+<p>output of <code>openclaw doctor --session-sqlite import</code> over the JSONL fixture.</p>
+<p>Read in the sessions directory beside the live transcripts: what a reset or a</p>
+<p>delete left behind — <code>&lt;id&gt;.jsonl.reset.&lt;ts&gt;</code>, <code>&lt;id&gt;.jsonl.deleted.&lt;ts&gt;</code> and the</p>
+<p>compressed <code>&lt;id&gt;.jsonl.deleted.&lt;ts&gt;.zst</code> an explicit delete writes since the</p>
+<p>SQLite flip. <code>&lt;ts&gt;</code> is a number or, from 2026.7, an ISO stamp with dashes such</p>
+<p>as <code>2026-10-01T15-18-21.294Z</code>. That is the history someone asks for after</p>
+<p>losing it. An archive</p>
+<p>whose live file is back stands down, so a reset conversation is indexed once.</p>
+<p>Skipped: <code>sessions.json</code> (store metadata), compaction checkpoints</p>
+<p>(<code>&lt;id&gt;.checkpoint.&lt;uuid&gt;.jsonl</code>), <code>.bak</code> copies and the</p>
+<p><code>session-sqlite-import-archive/</code> copies the migration leaves — those sessions</p>
+<p>are in the SQLite store deja already reads. Format verified</p>
+<p>against a 2026.8.2 store and openclaw source</p>
+<p>(<code>src/config/sessions/session-accessor.sqlite-*.ts</code>, <code>paths.ts</code>).</p>
+<p>A sub-agent (<code>sessions_spawn</code>) runs in a session of its own, and its entry</p>
+<p>names the session that asked for it (<code>spawnedBySessionId</code>, or the requester&#39;s</p>
+<p>key in <code>parent_session_key</code> / <code>spawnedBy</code>, in the database or in</p>
+<p><code>sessions.json</code>), so <code>deja show</code> names the parent and the parent lists its</p>
+<p>children. A child spawned with <code>context: &#34;fork&#34;</code>, and a branch, opens on a</p>
+<p>header whose <code>parentSession</code> names the source, followed by the source&#39;s</p>
+<p>entries copied with their original times; deja reads only what comes after</p>
+<p>the header, so the copy is not credited to the child in search or blame. The</p>
+<p><code>&lt;&lt;&lt;BEGIN_OPENCLAW_INTERNAL_CONTEXT&gt;&gt;&gt;</code> blocks OpenClaw wraps around a</p>
+<p>sub-agent&#39;s task are dropped from the turn. Verified against 2026.10.4.</p>
+<ul>
+<li><strong>Plugin package</strong>: <code>openclaw plugins install clawhub:@vshulcz/openclaw-deja</code> (also on npm) — <code>before_prompt_build</code> recall plus <code>deja_recall</code>, <code>deja_fix</code>, <code>deja_blame</code>; stands down on whatever <code>deja install openclaw-auto</code> already wired.</li>
+<li><strong>MCP</strong>: <code>deja install openclaw</code> wires deja into <code>openclaw.json</code> under</li>
+</ul>
+<p><code>mcp.servers</code> (OpenClaw&#39;s own layout, not the common <code>mcpServers</code> root).</p>
+<p>Live-verified: <code>openclaw mcp probe deja</code> reports the tools and the agent</p>
+<p>calls <code>recall</code> mid-turn.</p>
+<ul>
+<li><strong>Skill</strong>: the shared <code>~/.agents/skills/deja-history/SKILL.md</code>. OpenClaw</li>
+</ul>
+<p>offers a skill as a command, so the skill is also <code>/deja-history</code>.</p>
+<ul>
+<li><strong>Auto-recall</strong>: <code>deja install openclaw-auto</code> adds the MCP entry, a plugin</li>
+</ul>
+<p>at <code>&lt;state&gt;/extensions/deja</code> (enabled under <code>plugins.entries</code> in</p>
+<p><code>openclaw.json</code>) and a hook pack at <code>&lt;state&gt;/hooks/deja-recall</code> (with</p>
+<p><code>hooks.internal.enabled</code> set). The plugin puts the session digest in front</p>
+<p>of the first turn at <code>agent_turn_prepare</code>, per-prompt recall at</p>
+<p><code>before_prompt_build</code>, and at <code>before_compaction</code> runs</p>
+<p><code>deja hook-precompact</code>, so the next prompt&#39;s recall carries what the agent</p>
+<p>was in the middle of; <code>session_end</code> runs <code>deja hook-session-end</code>. A tool</p>
+<p>result middleware adds a file&#39;s history after a read, edit or patch and the</p>
+<p>earlier fix after a failed command. The hook pack</p>
+<p>adds the digest at <code>agent:bootstrap</code>, which fires only in gateway mode.</p>
+<p><code>openclaw chat</code> and <code>openclaw tui --local</code> run no plugin or hook</p>
+<p>(2026.10.4), so none of this reaches them; MCP recall there leaves out the</p>
+<p>session OpenClaw wrote to last when no hook stamped one.</p>
+<p>A section openclaw.json keeps in its own file (<code>&#34;mcp&#34;: {&#34;$include&#34;: …}</code>)</p>
+<p>is refused rather than written beside, with what to add there by hand: a</p>
+<p>key next to the <code>$include</code> makes OpenClaw&#39;s own edits of that section land</p>
+<p>in openclaw.json.</p>
+<ul>
+<li><strong>Resume</strong>: <code>openclaw tui --session &lt;key&gt;</code> when a gateway answers where the</li>
+</ul>
+<p>TUI connects (<code>OPENCLAW_GATEWAY_URL</code>, <code>gateway.remote.url</code> in remote mode,</p>
+<p>else 127.0.0.1 on <code>gateway.port</code>, default 18789), so the plugin and hooks</p>
+<p>run there; otherwise <code>openclaw chat --session &lt;key&gt;</code> and a line saying the</p>
+<p>local mode has no digest or recall (#5337). Both take the same key: one TUI,</p>
+<p>one key resolver (2026.7.1-2). OpenClaw addresses a</p>
+<p>conversation by key (<code>agent:&lt;id&gt;:&lt;name&gt;</code>); the uuid its transcript is named</p>
+<p>after opens nothing. Legacy JSONL sessions use <code>sessions.json</code> beside the</p>
+<p>transcripts; SQLite sessions use the store&#39;s current-session mapping. An</p>
+<p>earlier reset window remains searchable but cannot reopen the current one</p>
+<p>under its old id. Live-verified for JSONL: the terminal UI came up on</p>
+<p><code>agent:main:main</code> with that session&#39;s history, and a run through</p>
+<p><code>openclaw agent --session-id</code> answered from it. SQLite key lookup is covered</p>
+<p>by synthetic database tests. A spawned sub-agent has a key of its own</p>
+<p>(<code>agent:main:subagent:&lt;id&gt;</code>), and <code>openclaw chat --session</code> on it loads the</p>
+<p>child&#39;s history (2026.10.4, #5303).</p>
+<ul>
+<li><strong>Handoff</strong>: exec, <code>openclaw tui --message &lt;prompt&gt;</code> (or <code>openclaw chat</code> with</li>
+</ul>
+<p>no gateway, said so) sends it once the TUI connects.</p>
+<p><strong>Last verified:</strong> 2026-09-02</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

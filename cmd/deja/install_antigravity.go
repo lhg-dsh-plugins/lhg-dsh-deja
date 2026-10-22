@@ -1,0 +1,117 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// Antigravity takes customizations as plugins: a directory under a
+// customization root's plugins/ folder, marked by plugin.json. Everything
+// beside that marker — hooks.json, mcp_config.json, skills/, rules/ — is
+// ingested automatically.
+//
+// Three details, all found by running it rather than reading the binary:
+//   - The root is the same ~/.gemini/config that holds mcp_config.json. The
+//     docs name `.agents/` as a customization root, but a probe placed there
+//     never fired.
+//   - Without plugin.json the directory is not a plugin and hooks.json is
+//     ignored silently.
+//   - hooks.json is a map of named hook to events, not a flat list, and
+//     PreInvocation takes handlers directly while PreToolUse wraps them in a
+//     matcher group.
+//
+// PreInvocation runs before each model call and injects whatever steps the
+// hook prints, which is how the digest gets in.
+const antigravityPluginName = "deja"
+
+func installAntigravityPlugin(exe string, uninstall bool) (installResult, error) {
+	// The launcher, not this binary: a generated plugin is as much a
+	// config as a hooks.json, and one that names the build it was
+	// installed from stops working the day that build moves (#3682).
+	exe = hookExeFor(exe, uninstall)
+	dir := filepath.Join(antigravityConfigHome(), "plugins", antigravityPluginName)
+	if uninstall {
+		if _, err := os.Stat(dir); err != nil {
+			return installResult{Path: dir, Action: "unchanged"}, nil
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			return installResult{}, err
+		}
+		// And the directories deja made above it, while each is empty and
+		// the record says it is deja's (#3698).
+		pruneCreatedDir(filepath.Dir(dir))
+		return installResult{Path: dir, Action: "removed"}, nil
+	}
+	noteCreatedDirs(dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return installResult{}, err
+	}
+	manifest, err := json.MarshalIndent(map[string]any{"name": antigravityPluginName}, "", "  ")
+	if err != nil {
+		return installResult{}, err
+	}
+	manifest = append(manifest, '\n')
+	manifestPath := filepath.Join(dir, "plugin.json")
+	oldManifest, err := readConfig(manifestPath)
+	if err != nil {
+		return installResult{}, err
+	}
+	if _, err := writeIfChanged(manifestPath, oldManifest, manifest); err != nil {
+		return installResult{}, err
+	}
+	hooksPath := filepath.Join(dir, "hooks.json")
+	oldHooks, err := readConfig(hooksPath)
+	if err != nil {
+		return installResult{}, err
+	}
+	next, err := json.MarshalIndent(map[string]any{
+		"deja-recall": map[string]any{
+			"PreInvocation": []any{map[string]any{
+				"type":    "command",
+				"command": fmt.Sprintf("%q hook-antigravity", exe),
+				"timeout": 10,
+			}},
+			// Antigravity has no session-end event; Stop, when the execution
+			// loop ends, is the nearest. PreInvocation stamps the conversation
+			// live and this drops the stamp, so another conversation's recall
+			// can answer with it between turns, as opencode's turn end does.
+			// The answer is the empty object every hook here may give.
+			"Stop": []any{map[string]any{
+				"type":    "command",
+				"command": fmt.Sprintf("%q hook-session-end --json", exe),
+				"timeout": 10,
+			}},
+		},
+	}, "", "  ")
+	if err != nil {
+		return installResult{}, err
+	}
+	next = append(next, '\n')
+	a, err := writeIfChanged(hooksPath, oldHooks, next)
+	if err != nil {
+		return installResult{}, err
+	}
+	return installResult{Path: dir, Action: a}, nil
+}
+
+// ensureAntigravityPluginMarker writes plugin.json if it is not already there,
+// so a skill installed on its own lands in a directory antigravity recognises.
+// It never rewrites an existing marker: `antigravity-auto` owns that file.
+func ensureAntigravityPluginMarker() error {
+	dir := filepath.Join(antigravityConfigHome(), "plugins", antigravityPluginName)
+	path := filepath.Join(dir, "plugin.json")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	noteCreatedDirs(dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	manifest, err := json.MarshalIndent(map[string]any{"name": antigravityPluginName}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(manifest, '\n'), 0o600)
+}

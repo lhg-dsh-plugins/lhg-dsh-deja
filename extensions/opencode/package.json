@@ -1,0 +1,60 @@
+{
+  "name": "opencode-deja",
+  "version": "0.23.0",
+  "description": "deja-vu memory for opencode: the session history of forty-one other coding agents, searchable and recalled on every request — a local index, no LLM.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./server": "./server.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "server.js",
+    "lib.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vshulcz/deja-vu.git",
+    "directory": "extensions/opencode"
+  },
+  "homepage": "https://vshulcz.github.io/deja-vu/guide/memory-for-opencode.html",
+  "bugs": {
+    "url": "https://github.com/vshulcz/deja-vu/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "memory",
+    "recall",
+    "session-history",
+    "agent",
+    "opencode-memory",
+    "agent-memory",
+    "ai-memory",
+    "coding-agent",
+    "claude-code",
+    "claude-code-memory",
+    "codex",
+    "cursor",
+    "gemini-cli",
+    "mcp",
+    "mcp-server",
+    "session-search",
+    "local-first"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": ">=1.0.0",
+    "@vshulcz/deja-vu": "^0.23.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

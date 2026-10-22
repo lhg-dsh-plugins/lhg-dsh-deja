@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Roo Code stores its history — session format</title>
+<meta name="description" content="Where Roo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/roo.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Roo Code stores its history — session format">
+<meta property="og:description" content="Where Roo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/roo.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Roo Code stores its history — session format">
+<meta name="twitter:description" content="Where Roo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Roo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Roo Code","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/roo.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/roo.html","name":"Roo Code","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html" aria-current="page">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Roo Code</h1>
+<ul>
+<li><strong>ID</strong>: <code>roo</code></li>
+<li><strong>Store</strong>: VS Code-host globalStorage <code>rooveterinaryinc.roo-cline/tasks/&lt;taskId&gt;/api_conversation_history.json</code>; per-task metadata in <code>history_item.json</code> (id, ts, task, workspace). Code, Code Insiders, VSCodium, Cursor and Windsurf host roots are probed, and a <code>roo-cline.customStoragePath</code> set in a host&#39;s <code>User/settings.json</code> is followed. The Roo CLI writes the same tree under <code>~/.vscode-mock/global-storage</code>.</li>
+<li><strong>Read override</strong>: <code>DEJA_ROO_ROOTS</code> (path list); <code>DEJA_ROO_CLI_ROOT</code> for the CLI&#39;s storage base</li>
+<li><strong>Format</strong>: whole-file JSON rewritten on change; full re-parse per pass. A change to <code>history_item.json</code> alone re-reads the task too (#4446)</li>
+</ul>
+<p>The transcript shape matches Cline&#39;s legacy store (Roo is a Cline fork), so</p>
+<p>the same text-block extraction and <code>&lt;task&gt;</code> envelope unwrapping apply.</p>
+<p>Format verified against Roo-Code source (<code>src/shared/globalFileNames.ts</code>,</p>
+<p><code>src/core/task-persistence</code>) and against a live run of the Roo CLI, which</p>
+<p>drives the same extension against a VS Code shim and writes the same files</p>
+<p>under <code>~/.vscode-mock/global-storage</code>.</p>
+<p>An edit call carries no <code>old_string</code>. <code>apply_diff</code>, and <code>replace_in_file</code> in the</p>
+<p>legacy shape, pass a SEARCH/REPLACE block under <code>diff</code>; <code>search_and_replace</code></p>
+<p>names the two sides <code>search</code> and <code>replace</code>; <code>write_to_file</code> and <code>insert_content</code></p>
+<p>carry the written side alone under <code>content</code>. Both sides are read where both are</p>
+<p>there — the SEARCH body is the replaced span <code>deja restore</code> hands back, the</p>
+<p>REPLACE body becomes the hashed written lines line-level blame matches. A</p>
+<p><code>search_and_replace</code> with <code>use_regex</code> records neither side, because a pattern is</p>
+<p>not text the file held, and a block whose closing marker never arrives records</p>
+<p>nothing rather than guessing where it ended. Current Roo also offers</p>
+<p><code>search_replace</code>, <code>edit_file</code> and <code>edit</code>, which take <code>old_string</code> and</p>
+<p><code>new_string</code> under <code>file_path</code>, and <code>apply_patch</code>, whose paths and <code>-</code>/<code>+</code> lines</p>
+<p>are read out of the patch body. <code>search_and_replace</code> is kept as an alias of</p>
+<p><code>edit</code> and written under the alias with <code>edit</code>&#39;s arguments, which are read as</p>
+<p><code>edit</code>&#39;s (#4531). <code>read_file</code> still takes the legacy</p>
+<p><code>files: [{path, lineRanges}]</code> form, stored with <code>_legacyFormat: true</code>; each</p>
+<p><code>path</code> is a file record (#4531).</p>
+<p>An <code>execute_command</code> result opens with its status, &#34;Command executed in</p>
+<p>terminal within working directory &#39;…&#39;. Exit code: N&#34; (a failure puts &#34;Command</p>
+<p>execution was not successful, …&#34; there and the code on the next line), and the</p>
+<p>command record carries <code>→ exit N</code> from it. A command killed by a signal, or one</p>
+<p>whose code the terminal never reported, keeps no code (#4530).</p>
+<p>Tasks from before native tool calling (Roo 3.20, and the legacy Cline</p>
+<p>extension) keep each call as XML inside the assistant&#39;s text block —</p>
+<p><code>&lt;execute_command&gt;&lt;command&gt;…&lt;/command&gt;&lt;/execute_command&gt;</code> — and its result as</p>
+<p>user text blocks headed <code>[execute_command for &#39;…&#39;] Result:</code>. Those calls give</p>
+<p>the same records a <code>tool_use</code> block does, and the result is indexed as tool</p>
+<p>output, not as the person&#39;s words. Only the first call of a message counts,</p>
+<p>since the client ran no other, and only in a task with no <code>tool_use</code> block at</p>
+<p>all: in a native-era task XML in the text is something the model showed. The</p>
+<p>answer to <code>ask_followup_question</code>, the feedback on <code>attempt_completion</code> and any</p>
+<p><code>&lt;feedback&gt;</code> typed beside a result stay the person&#39;s. The retry prompt the</p>
+<p>client sends when the model used no tool (&#34;[ERROR] You did not use a tool…&#34;) is</p>
+<p>not indexed as a user turn.</p>
+<p>A call names its file relative to the workspace, so the path is resolved against</p>
+<p>the <code>workspace</code> in <code>history_item.json</code> before it is recorded — a one-segment</p>
+<p>path like <code>loop.go</code> matches no file on any machine otherwise. A task without</p>
+<p>that metadata keeps the path as it was recorded rather than resolving it against</p>
+<p>the wrong root.</p>
+<ul>
+<li><strong>MCP</strong>: <code>deja install roo</code> writes the server into <code>mcp_settings.json</code> for</li>
+</ul>
+<p>every host Roo has run in, and names deja&#39;s own tool in that entry&#39;s</p>
+<p><code>alwaysAllow</code> — without it Roo asks before every recall.</p>
+<ul>
+<li><strong>Skill</strong>: the shared <code>~/.agents/skills/deja-history/SKILL.md</code>.</li>
+<li><strong>Command</strong>: <code>~/.roo/commands/deja.md</code>, invoked as <code>/deja</code>.</li>
+<li><strong>Auto-recall</strong>: none. Roo Code is archived (RooCodeInc/Roo-Code, 2026-05-15);</li>
+</ul>
+<p>the hooks PRs never merged, and the last extension, 3.54.0, has no hook</p>
+<p>event in its bundle.</p>
+<ul>
+<li><strong>Resume</strong>: <code>roo -w &lt;workspace&gt; --session-id &lt;uuid&gt;</code>, run in the task&#39;s</li>
+</ul>
+<p>workspace, for tasks the CLI created. The <code>-w</code> matters: without it the CLI</p>
+<p>looks under the real path of its cwd, and a task created with <code>-w /tmp/...</code></p>
+<p>on macOS recorded the symlinked path. A workspace that is gone is refused</p>
+<p>with <code>deja show</code> (#4459). Editor tasks reopen from the extension&#39;s history UI.</p>
+<ul>
+<li><strong>Handoff</strong>: paste.</li>
+</ul>
+<p><strong>Last verified:</strong> 2026-10-07</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

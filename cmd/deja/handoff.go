@@ -1,0 +1,485 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/vshulcz/deja-vu/internal/digest"
+	"github.com/vshulcz/deja-vu/internal/index"
+	"github.com/vshulcz/deja-vu/internal/model"
+	"github.com/vshulcz/deja-vu/internal/policy"
+	"github.com/vshulcz/deja-vu/internal/redact"
+	"github.com/vshulcz/deja-vu/internal/sources"
+	"github.com/vshulcz/deja-vu/internal/usage"
+)
+
+const handoffBudget = 6 * 1024
+
+// runHandoff packages the live context of a session — the problem, what was
+// concluded, where it stopped — and continues it in a different agent.
+// Default output is the digest itself so it composes into any CLI:
+//
+//	codex "$(deja handoff --to codex)"
+//
+// --exec launches the target agent directly with the digest as its first
+// prompt. The source is the newest session for the current project unless an
+// id-prefix picks one explicitly.
+func runHandoff(dir string, args []string, stdout io.Writer) error {
+	target := ""
+	prefix := ""
+	doExec := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--to":
+			// Empty as well as absent: an empty value fell through the
+			// `target != ""` gate below and printed the paste-only handoff, so
+			// a scripted `--to "$AGENT"` with the variable unset read like a
+			// handoff to an agent (#1647).
+			if i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+				// Named targets, like the refusal below: the reader who typed
+				// an empty --to needs the same list as the one who typed a
+				// wrong name.
+				return fmt.Errorf("handoff: --to needs an agent name: %s", strings.Join(handoffTargets(), ", "))
+			}
+			target = args[i+1]
+			i++
+		case "--exec":
+			doExec = true
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				return unknownFlag("handoff", args[i], handoffFlags)
+			}
+			// The last one used to win, so a stray word replaced the id and
+			// the refusal named it as the session that was missing (#2251).
+			if prefix != "" {
+				return fmt.Errorf("handoff takes one id-prefix — got %q and %q", prefix, args[i])
+			}
+			prefix = args[i]
+		}
+	}
+	if canon, ok := handoffAlias[target]; ok {
+		target = canon
+	}
+	pasteOnly := target == "" || handoffPasteOnly[target]
+	if !pasteOnly {
+		if _, ok := handoffCommand(target, ""); !ok {
+			return fmt.Errorf("don't know how to hand off to %q; targets: %s (or omit --to and paste the digest anywhere)", target, strings.Join(handoffTargets(), ", "))
+		}
+	}
+	if pasteOnly && doExec {
+		if target == "" {
+			return fmt.Errorf("handoff --exec needs --to <agent>: %s", strings.Join(handoffTargets(), ", "))
+		}
+		return fmt.Errorf("%s has no CLI prompt entry — run `deja handoff --to %s` and paste the digest into a new chat", target, target)
+	}
+	s, err := handoffSource(dir, prefix)
+	if err != nil {
+		return err
+	}
+	if err := denyPolicyHidden(prefix, s, os.Stderr); err != nil {
+		return err
+	}
+	// The exclude list is a privacy control that only runs at ingest, so an
+	// index built before the pattern still holds the session. share refuses it
+	// for that reason (#1307) and promote followed (#2278); handing the same
+	// session to another agent is the same move with a longer extract (#2280).
+	if sources.ExcludedProject(s.Project) {
+		return fmt.Errorf("%s is in a project your exclude list covers — `deja index --rebuild` drops it from the index, or remove the pattern to hand it off", prefix)
+	}
+	// Source receipt: the user must always see WHAT is being handed off —
+	// wrong-project or stale handoffs should be obvious before they land.
+	age := "unknown age"
+	if !s.Updated.IsZero() {
+		age = humanAge(time.Since(s.Updated))
+	}
+	fmt.Fprintf(os.Stderr, "deja: handing off %s · %s · %s · %s\n", s.Harness, s.Project, digest.Short(s.ID), age)
+	if target == "openclaw" {
+		if _, note := openclawTUI(); note != "" {
+			fmt.Fprintf(os.Stderr, "deja: %s\n", note)
+		}
+	}
+	if !s.Updated.IsZero() && time.Since(s.Updated) > 7*24*time.Hour && pickedOnScreen == nil {
+		// The line above already says how old; saying it again here read as
+		// two warnings. One picked on the screen was picked knowing its age.
+		fmt.Fprintln(os.Stderr, "deja: older than a week — `deja last` lists newer sessions to hand off")
+	}
+	// The quoted half carries the same frame recall does: this text becomes
+	// the next agent's first prompt, and nothing else said which half of it
+	// was the session's (#2866).
+	digest := digest.Handoff(s, handoffBudget)
+	usage.RecordDigestPolicyFrom(dir, usage.KindHandoff, digest, "", 1, rawSize([]model.Session{s}), projectsOf(s), "")
+	if !doExec {
+		printSanitized(stdout, digest)
+		if pasteOnly {
+			fmt.Fprint(os.Stderr, pasteOnlyFooter(prefix))
+		} else {
+			argv, _ := handoffCommand(target, "")
+			head := make([]string, 0, len(argv))
+			for _, a := range argv {
+				if a != "" {
+					head = append(head, a)
+				}
+			}
+			fmt.Fprintf(os.Stderr, "\nhand it off:\n  %s \"$(deja handoff --to %s%s)\"\nor run it now: deja handoff --to %s%s --exec\n",
+				strings.Join(head, " "), target, prefixArg(prefix), target, prefixArg(prefix))
+		}
+		return nil
+	}
+	argv, _ := handoffArgv(target, digest)
+	if _, err := exec.LookPath(argv[0]); err != nil {
+		return fmt.Errorf("handoff: %s is not installed (looked for %q in PATH)", target, argv[0])
+	}
+	c := exec.Command(argv[0], argv[1:]...)
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return c.Run()
+}
+
+// handoffArgv is the command that opens the target with this digest as its
+// first prompt. One seam, so the sanitising below cannot be wired past: the
+// exec path used to build the argv from the raw digest a few lines from the
+// printed path that sanitised it.
+func handoffArgv(target, digest string) ([]string, bool) {
+	return handoffCommand(target, handoffPrompt(digest))
+}
+
+// handoffPrompt is the digest as it leaves for another agent's command line.
+//
+// The printed handoff has always gone through printSanitized — secrets
+// redacted, bidi and zero-width characters stripped — and --exec passed the
+// digest raw, so one session left this machine clean when pasted and unclean
+// when handed over directly. The two differ in how the text leaves, not in
+// what it is.
+//
+// The leading-dash guard rides here too: a prompt can never start with "-"
+// today, but a future digest change must not be able to turn the prompt into
+// a flag for the target.
+func handoffPrompt(digest string) string {
+	redacted, _ := redact.Text(digest)
+	out := stripBidiAndInvisible(redacted)
+	if strings.HasPrefix(out, "-") {
+		out = " " + out
+	}
+	return out
+}
+
+func humanAge(d time.Duration) string {
+	switch {
+	case d < 0:
+		// A timestamp ahead of the clock. Transcripts carry whatever time the
+		// machine that wrote them had, and a store synced from a machine whose
+		// clock runs fast brings that here — measured as "-576000m old" on a
+		// session dated a year ahead, since every negative duration fell into
+		// the minutes branch. The receipt exists for the reader to sanity-check
+		// what is being handed off, so it says what it knows rather than a
+		// number that cannot be true.
+		return "unknown age"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm old", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh old", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd old", int(d.Hours()/24))
+	}
+}
+
+func prefixArg(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	return " " + prefix
+}
+
+// handoffSource resolves the session being handed off: an explicit id-prefix,
+// or the newest indexed session for the project in the current directory.
+func handoffSource(dir, prefix string) (model.Session, error) {
+	picked := pickedOnScreen != nil && prefix == pickedOnScreen.ID
+	if !picked {
+		if err := index.Ensure(dir, "", false, os.Stderr); err != nil {
+			return model.Session{}, err
+		}
+	}
+	if prefix != "" {
+		s, ok, err := findByPrefix(dir, prefix)
+		if !picked {
+			noteAmbiguousPrefix(dir, prefix, "handing off")
+		}
+		if err != nil {
+			return model.Session{}, err
+		}
+		if !ok {
+			return model.Session{}, noSessionMatches(dir, prefix)
+		}
+		return s, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return model.Session{}, err
+	}
+	var newest model.Session
+	distinct := map[string]bool{}
+	// By session, not by pass: a directory yields several project-name
+	// candidates and the same session answers to more than one of them, so
+	// counting per pass told the reader the rule hides more than the project
+	// holds (#981).
+	hidden := map[string]bool{}
+	// Newest of the withheld ones, so the pick can say it is not the latest
+	// work in this project rather than handing over older work in silence.
+	var hiddenNewest time.Time
+	for _, name := range digest.ProjectNameCandidates(cwd) {
+		// More than the three handed on: notes are skipped below, and a few
+		// `deja remember` calls in a row outnumbered them.
+		ss, err := index.RecentInProject(dir, name, 10)
+		if err != nil || len(ss) == 0 {
+			continue
+		}
+		// Nobody named this session — deja is choosing it, which is what a
+		// listing does and what a listing filters (#937). Without this the
+		// pick landed on a session the rule keeps out of recall and packaged
+		// its content for another agent (#953).
+		// Synced work is offered by recall under the looser rule, but handing
+		// it to another agent on a directory-name match is a different act:
+		// from a directory named api, the newest match was a teammate's
+		// clients/acme/api (#2347).
+		// A note from `deja remember` or `promote` is filed under the project
+		// too, and is newer than the work it records: picked here, it was
+		// handed off as the session, with the note as its objective.
+		var own []model.Session
+		for _, s := range ss {
+			if s.Harness == "deja" {
+				continue
+			}
+			if index.ProjectInScopeStrict(s.Project, name) {
+				own = append(own, s)
+			}
+		}
+		ss = own
+		kept, _ := policyFilterSessionsCounted(policy.ActivationSearch, ss)
+		keptIDs := map[string]bool{}
+		for _, k := range kept {
+			keptIDs[k.ID] = true
+		}
+		for _, s := range ss {
+			if !keptIDs[s.ID] {
+				hidden[s.ID] = true
+				if s.Updated.After(hiddenNewest) {
+					hiddenNewest = s.Updated
+				}
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		distinct[kept[0].ID] = true
+		if kept[0].Updated.After(newest.Updated) {
+			newest = kept[0]
+		}
+	}
+	if newest.ID == "" {
+		if len(hidden) > 0 {
+			return model.Session{}, errors.New(strings.TrimPrefix(policyHiddenNote(policy.ActivationSearch, len(hidden)), "deja: "))
+		}
+		return model.Session{}, idPrefixNeeded(dir, "handoff needs a session to package", "no indexed sessions for this project — pass a session id-prefix (see `deja last`)")
+	}
+	// The pick is deja's, and a rule that removed newer work from the choice
+	// changes what the pick means: handing over a month-old session while
+	// today's is withheld looked exactly like a project nobody has touched
+	// since (#1013).
+	if hiddenNewest.After(newest.Updated) {
+		fmt.Fprintf(os.Stderr, "deja: newer work in this project is withheld by the trust policy (%s: %s) — this is the newest session it allows\n",
+			policy.ActivationSearch, policy.Load().Describe(policy.ActivationSearch))
+	}
+	if len(distinct) > 1 {
+		fmt.Fprintf(os.Stderr, "deja: %d different sessions match this directory's project names — picked the newest; pass an id-prefix to choose (see `deja last`)\n", len(distinct))
+	}
+	return newest, nil
+}
+
+// handoffCommand maps a target agent to the argv that opens it with an
+// initial prompt. Prompt is passed as a single argv element — no shell.
+func handoffCommand(target, prompt string) ([]string, bool) {
+	switch target {
+	case "claude":
+		return []string{"claude", prompt}, true
+	case "codex":
+		return []string{"codex", prompt}, true
+	case "opencode":
+		return []string{"opencode", "--prompt", prompt}, true
+	case "gemini":
+		return []string{"gemini", "-i", prompt}, true
+	case "qwen":
+		return []string{"qwen", "-i", prompt}, true
+	case "aider":
+		return []string{"aider", "--message", prompt}, true
+	case "pi":
+		return []string{"pi", prompt}, true
+	case "senpi":
+		// Same shape as pi's — a bare prompt argument, from its own usage line
+		// (`senpi [options] [--] [@files...] [messages...]`), measured on a
+		// live install (#3670).
+		return []string{"senpi", prompt}, true
+	case "omp":
+		return []string{"omp", prompt}, true
+	case "amp":
+		// Amp's execute mode: it takes the prompt as the flag's value and
+		// prints the last assistant message.
+		return []string{"amp", "-x", prompt}, true
+	case "prime":
+		// prime-agent takes the message as its trailing argument, and --print
+		// answers once and exits.
+		return []string{"prime-agent", "--print", prompt}, true
+	case "grok":
+		return []string{"grok", prompt}, true
+	case "crush":
+		// `crush run` answers once and exits; the bare command opens the TUI.
+		return []string{"crush", "run", prompt}, true
+	case "cursor":
+		return []string{"cursor-agent", prompt}, true
+	case "copilot":
+		// -i starts the interactive session and runs the prompt in it; -p
+		// answered once and exited (1.0.79 --help).
+		return []string{"copilot", "-i", prompt}, true
+	case "copilot-chat":
+		// Opens VS Code's chat in agent mode with the prompt (1.140.0
+		// `code chat --help`: `code chat [options] [prompt]`).
+		return []string{"code", "chat", "-m", "agent", prompt}, true
+	case "kilocode":
+		// The TUI's own option, "prompt to use" (kilo 7.8.8 --help).
+		return []string{"kilo", "--prompt", prompt}, true
+	case "continue":
+		// `cn [options] [command] [prompt]` starts an interactive session with
+		// the prompt (1.5.47).
+		return []string{"cn", prompt}, true
+	case "commandcode":
+		// `cmd "message"` starts with an initial message (1.77.0); on Windows
+		// the bin is cmdc, as for resume.
+		bin := "cmd"
+		if runtime.GOOS == "windows" {
+			bin = "cmdc"
+		}
+		return []string{bin, prompt}, true
+	case "codebuddy":
+		// Interactive by default, prompt as the trailing argument (2.161.4).
+		return []string{"codebuddy", prompt}, true
+	case "trae":
+		// `traecli [OPTIONS] [PROMPT]` (0.207.1); traex is the name resume
+		// prints too.
+		return []string{"traex", prompt}, true
+	case "muse":
+		// `muse exec "<prompt>"` runs one task and exits (1.4.2, #4709).
+		return []string{"muse", "exec", prompt}, true
+	case "kiro":
+		// `kiro-cli chat [INPUT]`, "the first question to ask" (2.22.0).
+		return []string{"kiro-cli", "chat", prompt}, true
+	case "gjc":
+		// Interactive mode with an initial prompt (0.18.7 cli-main.ts).
+		return []string{"gjc", prompt}, true
+	case "kimchi":
+		// `kimchi [options] [@files…] [messages…]` launches the harness with
+		// the messages (0.1.99).
+		return []string{"kimchi", prompt}, true
+	case "codewhale":
+		// "[PROMPT] Initial prompt to submit in the interactive TUI" (0.10.0).
+		return []string{"codewhale", prompt}, true
+	case "junie":
+		// `junie <task>` runs the task and exits (3110.7).
+		return []string{"junie", prompt}, true
+	case "hermes":
+		// `hermes chat -q` is a single query, the only prompt entry (0.17.0).
+		return []string{"hermes", "chat", "-q", prompt}, true
+	case "openclaw":
+		// The TUI; --message is sent after it connects (2026.7.1-2). The
+		// gateway's when one answers, so the plugin and hooks run (#5337).
+		sub, _ := openclawTUI()
+		return []string{"openclaw", sub, "--message", prompt}, true
+	case "deepseek":
+		// The headless profile answers one task and exits (dsh 0.1.1-rc.2).
+		return []string{"dsh", "--profile", "headless", prompt}, true
+	case "reasonix":
+		// `reasonix run <task>` (2.30.0); the TUI takes no prompt.
+		return []string{"reasonix", "run", prompt}, true
+	case "zcode":
+		// `zcode -p <text>` runs one prompt without the TUI, the only prompt
+		// entry (zcode-app-cli 3.14.4).
+		return []string{"zcode", "-p", prompt}, true
+	case "cline":
+		// The CLI runs the extension headlessly and takes the prompt as its
+		// argument; verified by running one.
+		return []string{"cline", prompt}, true
+	case "goose":
+		return []string{"goose", "run", "-t", prompt}, true
+	case "kimi":
+		return []string{"kimi", "-p", prompt}, true
+	case "antigravity":
+		// Antigravity's CLI is `agy`; -i seeds a prompt into an interactive session.
+		return []string{"agy", "-i", prompt}, true
+	case "devin":
+		// Devin CLI's one-shot mode: -p prints an answer and exits.
+		return []string{"devin", "-p", prompt}, true
+	default:
+		return nil, false
+	}
+}
+
+// handoffAlias lets a target be spelled the way its own CLI is invoked.
+var handoffAlias = map[string]string{
+	"agy": "antigravity", "kilo": "kilocode", "cn": "continue", "cmd": "commandcode",
+	"cmdc": "commandcode", "traex": "trae", "traecli": "trae", "kiro-cli": "kiro",
+	"dsh": "deepseek", "code": "copilot-chat", "vscode": "copilot-chat",
+}
+
+// handoffPasteOnly mirrors the registry's `handoff: paste` entries; the
+// capability drift test keeps the two in sync.
+// Roo, Zed, Cherry Studio, JetBrains AI Assistant and Windsurf run the agent
+// inside the app, so there is no command line to hand a prompt to.
+var handoffPasteOnly = map[string]bool{"roo": true, "cherrystudio": true, "zed": true, "jetbrains": true, "windsurf": true}
+
+// pasteOnlyFooter ends a handoff printed for pasting. It named all of
+// handoffTargets inline, a four-line wall at 80 columns; the agents a reader
+// can actually open here are the ones whose command is on PATH.
+func pasteOnlyFooter(prefix string) string {
+	var found []string
+	for _, t := range handoffTargets() {
+		if handoffPasteOnly[t] {
+			continue
+		}
+		argv, ok := handoffCommand(t, "")
+		if !ok || len(argv) == 0 {
+			continue
+		}
+		if _, err := exec.LookPath(argv[0]); err == nil {
+			found = append(found, t)
+		}
+	}
+	if len(found) == 0 {
+		return "\npaste this into a new chat — `deja handoff --help` names the agents it can open directly\n"
+	}
+	const shown = 3
+	var b strings.Builder
+	b.WriteString("\npaste this into a new chat, or open it in an agent found here:\n")
+	for i, t := range found {
+		if i == shown {
+			width := printableWidth(os.Stderr)
+			if width <= 0 {
+				width = 76
+			}
+			more := fmt.Sprintf("(%d more: %s)", len(found)-shown, strings.Join(found[shown:], ", "))
+			for _, line := range strings.Split(wrapProse(more, width-2), "\n") {
+				b.WriteString("  " + line + "\n")
+			}
+			break
+		}
+		fmt.Fprintf(&b, "  deja handoff --to %s%s --exec\n", t, prefixArg(prefix))
+	}
+	return b.String()
+}
+
+func handoffTargets() []string {
+	return []string{"claude", "codex", "opencode", "cursor", "copilot", "copilot-chat", "gemini", "qwen", "antigravity", "aider", "pi", "senpi", "omp", "amp", "prime", "grok", "cline", "goose", "kimi", "crush",
+		"kilocode", "continue", "commandcode", "codebuddy", "trae", "muse", "kiro", "gjc", "kimchi", "codewhale", "junie", "hermes", "openclaw", "deepseek", "reasonix", "zcode", "devin"}
+}

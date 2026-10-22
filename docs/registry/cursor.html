@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Cursor stores its history — session format</title>
+<meta name="description" content="Where Cursor writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/cursor.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Cursor stores its history — session format">
+<meta property="og:description" content="Where Cursor writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/cursor.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Cursor stores its history — session format">
+<meta name="twitter:description" content="Where Cursor writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Cursor writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Cursor session format","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/cursor.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/cursor.html","name":"Cursor session format","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html" aria-current="page">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Cursor session format</h1>
+<h2 id="stores-and-files">Stores and files</h2>
+<p>Cursor IDE stores chats in <code>state.vscdb</code> under <code>globalStorage/</code> and <code>workspaceStorage/*/</code>. The user root is <code>~/Library/Application Support/Cursor/User</code> on macOS, <code>%APPDATA%\Cursor\User</code> on Windows and <code>~/.config/Cursor/User</code> elsewhere; on Linux an existing <code>$XDG_CONFIG_HOME/Cursor/User</code> is used when available. <code>DEJA_CURSOR_ROOT</code> overrides IDE discovery.</p>
+<p>Cursor CLI writes <code>projects/&lt;encoded-path&gt;/agent-transcripts/**/*.jsonl</code> below <code>${CURSOR_CONFIG_DIR:-~/.cursor}</code>. <code>DEJA_CURSOR_CLI_ROOT</code> overrides transcript reads. A subagent&#39;s run is written to</p>
+<p><code>agent-transcripts/&lt;parent&gt;/subagents/&lt;child&gt;.jsonl</code> (cursor-agent&#39;s transcript</p>
+<p>path resolver, <code>kind: &#34;subagent&#34;</code> with <code>parentConversationId</code>). The lines carry</p>
+<p>no ids, so the directory is the parent link. deja reads the child as Claude&#39;s</p>
+<p>sidechains: a session naming its parent, kept as its task, its answer and the</p>
+<p>files it changed, so <code>deja blame</code> can name the subagent that wrote a line.</p>
+<p><code>DEJA_INCLUDE_SUBAGENTS=1</code> takes the whole run, <code>=0</code> leaves them out.</p>
+<h2 id="ide-sqlite-records">IDE SQLite records</h2>
+<p>The <code>cursorDiskKV(key, value)</code> table has session values at <code>composerData:&lt;id&gt;</code> and message values at <code>bubbleId:&lt;composer-id&gt;:&lt;bubble-id&gt;</code>.</p>
+<pre><code class="language-json">{&#34;composerId&#34;:&#34;composer-7&#34;,&#34;name&#34;:&#34;Fix cache invalidation&#34;,&#34;createdAt&#34;:1784278800000,&#34;lastUpdatedAt&#34;:1784278802000}
+{&#34;type&#34;:1,&#34;text&#34;:&#34;Why is this stale?&#34;,&#34;timestamp&#34;:1784278801000,&#34;workspaceProjectDir&#34;:&#34;/work/api&#34;}</code></pre>
+<p>Bubble <code>type: 1</code> maps to <code>user</code>; other numeric types map to <code>assistant</code>. Text uses <code>text</code>, falling back to <code>rawText</code>. Timestamps are Unix milliseconds. The first bubble with <code>workspaceProjectDir</code> supplies the project. Reading SQLite requires the <code>sqlite3</code> CLI.</p>
+<h2 id="cli-jsonl-records">CLI JSONL records</h2>
+<pre><code class="language-json">{&#34;role&#34;:&#34;assistant&#34;,&#34;message&#34;:{&#34;content&#34;:[{&#34;type&#34;:&#34;text&#34;,&#34;text&#34;:&#34;The cache key omitted the locale.&#34;}]}}</code></pre>
+<p>Tool calls follow the Anthropic <code>tool_use</code> shape with Cursor&#39;s own names: <code>path</code> rather than <code>file_path</code>, <code>Shell</code> rather than <code>Bash</code>, <code>old_string</code>/<code>new_string</code> on <code>StrReplace</code>, and the whole file as <code>contents</code> on <code>Write</code> — the last of these is the only record a created file&#39;s lines were ever in a session.</p>
+<p>Only <code>user</code> and <code>assistant</code> roles are retained. Content follows the Anthropic string-or-parts shape. Control records such as <code>turn_ended</code> are ignored. Records carry no timestamp field; a user turn&#39;s text starts with a <code>&lt;timestamp&gt;Sunday, Jul 26, 2026, 1:06 PM (UTC+3)&lt;/timestamp&gt;</code> block, which deja reads and carries forward to the assistant turns that answer it. A transcript with no readable block falls back to the file&#39;s modification time.</p>
+<h2 id="the-second-cli-store">The second CLI store</h2>
+<p>Cursor CLI also writes one SQLite store per chat:</p>
+<pre><code>~/.cursor/chats/&lt;workspace-hash&gt;/&lt;chat-uuid&gt;/meta.json
+~/.cursor/chats/&lt;workspace-hash&gt;/&lt;chat-uuid&gt;/store.db</code></pre>
+<p><code>store.db</code> holds <code>blobs(id TEXT, data BLOB)</code> and <code>meta(key, value)</code>. The blobs are content-addressed and the tree needs no schema to walk: <code>meta</code>&#39;s single value is hex-encoded JSON naming <code>latestRootBlobId</code>, that blob is protobuf whose repeated field 1 is a list of 32-byte child digests in message order, and each child is plain JSON in the Vercel AI SDK shape — <code>{&#34;role&#34;,&#34;content&#34;}</code> with <code>text</code>, <code>reasoning</code>, <code>tool-call</code> and <code>tool-result</code> parts, the calls named as above but keyed <code>toolName</code>/<code>args</code>.</p>
+<p>Each chat also has a <code>meta.json</code> beside its <code>store.db</code> holding the <code>cwd</code> it ran in, and the <code>&lt;workspace-hash&gt;</code> above it is md5 of that path; deja reads it for the project name and the resume directory (#4193). The transcript holds every turn the store does except the <code>&lt;user_info&gt;</code> environment preamble, but none of the tool results, so deja reads the store for those alone: each transcript call is paired with the store&#39;s call of the same tool name and arguments, in order, and takes its result. A Shell result gives the exit status on the command and the printed output without Cursor&#39;s <code>Exit code</code> / <code>Command output</code> framing; the results of <code>GetMcpTools</code> and <code>GetDynamicTools</code>, which are the MCP servers&#39; own descriptions, are skipped. Every chat with a <code>store.db</code> had a transcript beside it, and <code>deja doctor</code> reports the count of chats with none — silent today, and the only signal if a release stops writing <code>agent-transcripts</code>.</p>
+<h2 id="wiring">Wiring</h2>
+<p><code>deja install cursor</code> adds the server to <code>${CURSOR_CONFIG_DIR:-~/.cursor}/mcp.json</code>, writes the shared skill <code>~/.agents/skills/deja-history/SKILL.md</code> and the <code>/deja</code> command in <code>commands/deja.md</code> beside it. <code>deja install cursor-auto</code> adds the same plus <code>hooks.json</code> entries: <code>sessionStart</code> (<code>deja hook-context</code>), <code>beforeSubmitPrompt</code> (<code>hook-prompt</code>, interactive TUI only — headless <code>-p</code> skips it), <code>preToolUse</code> (matcher <code>^(Shell|Write|Task)$</code>), <code>postToolUse</code> and <code>postToolUseFailure</code> (matcher <code>^Shell$</code>; the second fires for a tool that errors, with the text in <code>error_message</code>), <code>preCompact</code> and <code>sessionEnd</code> (<code>hook-session-end</code>, so the session you closed is back in the next one&#39;s MCP recall). Cursor also runs the hooks in <code>~/.claude/settings.json</code> and dedupes them against its own by exact command string, so a machine with both wired gets one injection. Cursor tests a matcher as a regex against <code>tool_name</code> for the three tool events (2026.09.02), so deja does not start on every read and grep.</p>
+<h2 id="resume">Resume</h2>
+<p>CLI chats only. A transcript is named after the chat id <code>cursor-agent --resume</code></p>
+<p>takes, and the command runs in the project directory because Cursor lists chats</p>
+<p>per workspace — it looks a chat up under <code>chats/&lt;md5 of the cwd&gt;/&lt;id&gt;</code> — so deja</p>
+<p>prints <code>cd &lt;project&gt; &amp;&amp; cursor-agent --resume &lt;id&gt;</code>, the directory read from the</p>
+<p>chat&#39;s <code>meta.json</code>, whose folder is that md5. The encoded transcript folder is</p>
+<p>only the fallback: it blanks a dot, a space or a non-ASCII character and cuts a</p>
+<p>long path with a hash, so it cannot be read back for those. A chat whose</p>
+<p>directory is gone, is not recorded, or is no longer in cursor-agent&#39;s store is</p>
+<p>refused with <code>deja show</code> instead — <code>cursor-agent --resume</code> with no id lists</p>
+<p>chats from every directory. Live-verified: the resumed chat answered from its own</p>
+<p>history. A CLI subagent is refused with its parent&#39;s id: its state lives in</p>
+<p>the parent&#39;s chat store and only its transcript is a file of its own, so</p>
+<p><code>--resume</code> has no chat to open for it (#5303). IDE chats carry a composer id from <code>state.vscdb</code> that the CLI does not</p>
+<p>take, so those still reopen only in the editor. On the screen bare <code>deja</code></p>
+<p>opens, <code>r</code> on a CLI chat runs this command for you, and <code>o</code> continues any chat</p>
+<p>in another agent.</p>
+<h2 id="status-line">Status line</h2>
+<p><code>deja install cursor-auto</code> sets <code>statusLine</code> in <code>cli-config.json</code> to</p>
+<p><code>{&#34;type&#34;:&#34;command&#34;,&#34;command&#34;:&#34;&lt;deja&gt; statusline&#34;}</code>. cursor-agent reads that file</p>
+<p>from <code>$CURSOR_CONFIG_DIR</code>, then <code>$XDG_CONFIG_HOME/cursor</code> (on macOS too), then</p>
+<p><code>~/.cursor</code>. It runs the command without a shell and pipes Claude&#39;s payload,</p>
+<p><code>transcript_path</code> included, after each turn; there is no timer. A status line</p>
+<p>already set there is left alone. Rendered live on cursor-agent 2026.09.02.</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li>Cursor moved modern IDE chats toward global storage while older versions used workspace databases; both are scanned.</li>
+<li>SQLite values are JSON inside a key-value table and malformed or null entries occur.</li>
+<li>CLI project path encoding has the same separator-versus-hyphen ambiguity as Claude Code.</li>
+<li>A parsed message is capped at 1 MiB. CLI subagent transcripts come in as task, answer and edits; <code>DEJA_INCLUDE_SUBAGENTS=0</code> skips them.</li>
+<li>Both CLI layouts are written by <code>cursor-agent 2026.09.02-c22c1a3</code>, minutes apart in the same session.</li>
+</ul>
+<p><strong>Last verified:</strong> 2026-10-07</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

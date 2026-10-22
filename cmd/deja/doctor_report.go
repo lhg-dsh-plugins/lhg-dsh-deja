@@ -1,0 +1,1202 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"io"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/vshulcz/deja-vu/internal/embed"
+	"github.com/vshulcz/deja-vu/internal/index"
+	"github.com/vshulcz/deja-vu/internal/jsonout"
+	"github.com/vshulcz/deja-vu/internal/model"
+	"github.com/vshulcz/deja-vu/internal/peers"
+	"github.com/vshulcz/deja-vu/internal/policy"
+	"github.com/vshulcz/deja-vu/internal/sources"
+)
+
+type doctorStore struct {
+	Name  string   `json:"name"`
+	State string   `json:"state"`
+	Paths []string `json:"paths"`
+	Files int      `json:"files"`
+	// IndexedSessions is the other half of the pair the human line has printed
+	// since #861: files against sessions is how collapsing shows, and a reader
+	// of --json could see only the files (#1088). Imported is counted apart for
+	// the same reason the printed line separates it (#894).
+	IndexedSessions int `json:"indexed_sessions"`
+	Imported        int `json:"indexed_from_elsewhere,omitempty"`
+	// Denied names the path that refused to be read, so the warning can point
+	// at the directory to fix rather than at the harness (#802). Partial says
+	// the rest of the store was readable: sessions are missing from recall
+	// rather than the whole harness (#816).
+	// Unchecked says the permission walk stopped at its budget, so no
+	// permission problem past that point was looked for (#1025).
+	// Skipped is why part of the store could not be read at all — a missing
+	// sqlite3 or zstd CLI. The text row has carried it in its detail; a reader
+	// of --json saw a state and no reason (#1758).
+	// Error is what the parser said when it refused the store. Without it the
+	// report told a person their format may have changed and asked them to
+	// report it, and the report they could send carried no more than the word
+	// "unreadable" — neither they nor we could tell a renamed column from a
+	// locked database from a missing CLI (#1642).
+	// NeverRead is how many of the store's transcripts the index has no state
+	// for at all. The printed row carries it for the same reason it carries
+	// the files-against-sessions pair, and a reader of --json could see
+	// neither: a store's session count of zero reads as "nothing written yet"
+	// rather than "five files never opened" (#3747).
+	// Note is why a missing store may hold no files on a machine that runs
+	// the harness: current Amp keeps its threads on ampcode.com (#4355).
+	NeverRead int    `json:"never_read,omitempty"`
+	Note      string `json:"note,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Denied    string `json:"denied,omitempty"`
+	Skipped   string `json:"skipped,omitempty"`
+	Partial   bool   `json:"partial,omitempty"`
+	Unchecked bool   `json:"unchecked,omitempty"`
+}
+
+type doctorComponent struct {
+	State string `json:"state"`
+	Path  string `json:"path,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+// doctorAutoStatus is one auto-recall wiring, in the same four states the text
+// report prints: wired, stale (the file is there and nothing in it calls deja),
+// missing, and plugin (the harness carries its own); aider adds broken, a
+// read: entry naming a context file that is gone (#4327). BinaryMissing is the state
+// an upgrade leaves — the entry is there, wired, and names a path that no
+// longer exists, so every hook exits 127 and nothing else says so.
+type doctorAutoStatus struct {
+	Name          string `json:"name"`
+	State         string `json:"state"`
+	Path          string `json:"path,omitempty"`
+	BinaryMissing bool   `json:"binary_missing,omitempty"`
+	// SwitchedOff marks a wired row the user turned off in the harness, the
+	// key the mcp rows use: the file is ours and the harness skips it (#4359).
+	SwitchedOff bool `json:"switched_off,omitempty"`
+}
+
+// doctorIndexReport is the index component. It carries stale_stores, which
+// docs/json-output.md documents and which the sqlite3 component has no meaning
+// for — sharing one struct put the field in both. omitempty is deliberately
+// absent: the document names the three keys that may be missing and this is
+// not one of them, so with omitempty the zero the example shows was the one
+// value never written, and a script reading it raised on every machine whose
+// index was fresh (#1710).
+type doctorIndexReport struct {
+	State       string `json:"state"`
+	Path        string `json:"path,omitempty"`
+	StaleStores int    `json:"stale_stores"`
+	// SessionsAhead counts sessions stamped later than this machine's clock.
+	// One of those leads `deja last` and the digest's recent block until the
+	// data is edited, and it arrives from an ordinary place: a hand-written
+	// note's ts (#2063), or a store whose stamps were read in the wrong unit
+	// (#2102). doctor has named the same fact for a peer since #1855.
+	SessionsAhead int `json:"sessions_stamped_ahead"`
+	// SourcesReadAt is when deja last walked this machine's stores, which is
+	// not when the index was last written: an import rewrites the manifest
+	// without opening a transcript, and a machine that syncs on a timer looked
+	// freshly indexed on every surface that compared against the build time
+	// (#3747). Empty when the store predates the field, and the word "never"
+	// when an import built the index and nothing local has been read at all.
+	SourcesReadAt string `json:"sources_read_at,omitempty"`
+	// Format is how the store on disk relates to this build, when it is not
+	// what this build writes. The text screen has carried a `format` row for
+	// this since #877 and the JSON carried nothing, so a script watching index
+	// health read "ok" on a store whose recall was off — the same miss #2292
+	// closed for damage (#3600). Omitted when the store is current, which is
+	// every ordinary run.
+	Format string `json:"format,omitempty"`
+}
+
+type doctorVersionReport struct {
+	State   string `json:"state"`
+	Current string `json:"current"`
+	Latest  string `json:"latest,omitempty"`
+}
+
+type doctorReport struct {
+	SchemaVersion int               `json:"schema_version"`
+	Stores        []doctorStore     `json:"stores"`
+	Index         doctorIndexReport `json:"index"`
+	MCP           []doctorMCPStatus `json:"mcp"`
+	// AutoRecall is the other half of an install and the half that fails
+	// silently: an MCP server is a tool the agent may call, these files are
+	// what make memory arrive without anyone asking. The text report has named
+	// their state since the rows existed, and a script reading this JSON could
+	// see a missing sqlite3 but not a hook that runs a binary which is gone —
+	// the state an upgrade leaves behind, where every hook exits 127.
+	AutoRecall []doctorAutoStatus `json:"auto_recall"`
+	// Commands is the third thing an install writes. A `/deja` under a name
+	// nobody types is the same kind of silent failure as a hook that is not
+	// approved, and it happened for a release (#3655).
+	Commands []doctorCommandStatus `json:"commands"`
+	SQLite3  doctorComponent       `json:"sqlite3"`
+	// Git is the other tool the text report names, and what it is needed for
+	// degrades in silence: changed-file notes, worktree names, the task signal.
+	// A machine checking this install could see a missing sqlite3 and not a
+	// missing git (#2411).
+	Git     doctorComponent                `json:"git"`
+	Version doctorVersionReport            `json:"version"`
+	Embed   *doctorEmbedReport             `json:"embed,omitempty"`
+	Policy  doctorPolicyReport             `json:"policy"`
+	Ingest  map[string]index.HarnessIngest `json:"ingest_health,omitempty"`
+	// IngestFiles is where those counts came from. Without it the pointer at
+	// the end of doctor's ingest line led back to the numbers it had just
+	// printed, and the file to fix was never named (#2189).
+	IngestFiles map[string]index.FileIngest `json:"ingest_files,omitempty"`
+	Sync        doctorSyncReport            `json:"sync"`
+	Deep        *index.DeepReport           `json:"deep,omitempty"`
+}
+
+// doctorSyncReport is the Sync section in the machine form. The text report has
+// had it since sync landed — "a sync that stops does not announce itself" is
+// the whole reason it exists — while `--json` had no key at all, so the one
+// reader that could watch it unattended could not see a peer that had been
+// failing for a week (#1838). The same gap the policy block had in #1027.
+//
+// Peers is never omitted: a machine with no peers has an empty list, which a
+// script can tell apart from a deja too old to report at all.
+type doctorSyncReport struct {
+	// State is ok or unreadable. A file deja cannot parse used to read exactly
+	// like a machine with no peers, on both surfaces, while sync walked nothing
+	// (#1840) — the same distinction policy.state has drawn since #1027.
+	State string             `json:"state"`
+	Error string             `json:"error,omitempty"`
+	Peers []doctorPeerReport `json:"peers"`
+	// Imported is what arrived from machines with no peer row — the state a
+	// first exchange leaves, before `deja sync ssh` names a target. The text
+	// report says it since #2379, and a tool reading this saw a machine that
+	// had never exchanged anything (#2382). Omitted when there is none, so a
+	// reader can tell "nothing arrived" from a deja too old to report it.
+	Imported []doctorImportedReport `json:"imported,omitempty"`
+}
+
+// doctorImportedReport is one machine that sent work this one keeps, named as
+// the records name it.
+type doctorImportedReport struct {
+	Machine  string `json:"machine"`
+	Sessions int    `json:"sessions"`
+}
+
+// doctorPeerReport is one machine, carrying what the text line carries.
+type doctorPeerReport struct {
+	Host string `json:"host"`
+	// Machine is the name that host turns out to be — what the sending machine
+	// calls itself, learned from the records a pull brings. It is the name
+	// `sessions_from_there` is counted by and the one every listing prints for
+	// imported work, so without it a consumer cannot join a peer row to the
+	// sessions that came from it (#2423). Absent until the machine has said.
+	Machine string `json:"machine,omitempty"`
+	// The two directions fail apart, and a host that takes what this machine
+	// sends while sending nothing back is a broken sync that reads as a
+	// working one — so they are separate keys rather than one "last exchange".
+	LastPush string `json:"last_push,omitempty"`
+	LastPull string `json:"last_pull,omitempty"`
+	// Sessions is how much of this index came from there, the number the text
+	// line prints as "N sessions from there".
+	Sessions int `json:"sessions_from_there"`
+	// LastError is why the most recent exchange failed. Bounded, unlike Host:
+	// nothing acts on this string, and a remote can make it arbitrarily long.
+	LastError string `json:"last_error,omitempty"`
+	// Ahead marks a stamp later than this machine's clock. The age of such a
+	// stamp is negative, and everything under a minute reads as "just now", so
+	// a peer seventy years out looked like the healthiest machine on the
+	// screen that exists to show a stopped sync (#1855). Not the session rule:
+	// a peer gets peerClockSlack first, for the reason peerStampedAhead gives
+	// (#1865).
+	Ahead bool `json:"stamped_ahead,omitempty"`
+}
+
+// collectDoctorSync reads the peers file and what arrived from each machine.
+func collectDoctorSync(dir string) doctorSyncReport {
+	list, why := peers.Snapshot()
+	from := importsByPeerName(dir)
+	out := doctorSyncReport{State: "ok", Peers: make([]doctorPeerReport, 0, len(list))}
+	if why != "" {
+		// Error is unbounded on purpose, unlike a peer's LastError beside it:
+		// this string is deja's own — a parse failure, or an OS error naming
+		// the file — while that one is written by another machine and can be
+		// made arbitrarily long. The encoder escapes either.
+		out.State, out.Error = "unreadable", why
+	}
+	for _, p := range list {
+		row := doctorPeerReport{
+			// The name as written, not as printed: JSON is read by something
+			// that may act on it — `deja sync ssh <host>` — and a bounded name
+			// names no machine. The encoder escapes a control byte on its own,
+			// which is the reason the text report needs a bound and this does
+			// not.
+			Host:      p.Host,
+			Machine:   p.Machine,
+			Sessions:  peerSessionCount(from, p),
+			LastError: safeForStatusline(p.LastError, 200),
+		}
+		if !p.LastPush.IsZero() {
+			row.LastPush = p.LastPush.UTC().Format(time.RFC3339)
+		}
+		if !p.LastPull.IsZero() {
+			row.LastPull = p.LastPull.UTC().Format(time.RFC3339)
+		}
+		row.Ahead = peerStampedAhead(p.Last(), time.Now())
+		out.Peers = append(out.Peers, row)
+		// Counted against a peer row, so the imported list below carries what
+		// is left: the machines this one has no target for.
+		delete(from, peers.Identity(p.Host))
+		if p.Machine != "" {
+			delete(from, peers.Identity(p.Machine))
+		}
+	}
+	names := make([]string, 0, len(from))
+	for name := range from {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if from[names[i]] != from[names[j]] {
+			return from[names[i]] > from[names[j]]
+		}
+		return names[i] < names[j]
+	})
+	for _, name := range names {
+		// The name as the records spell it, for the reason Host is: a reader
+		// may act on it, and the encoder escapes what a terminal would obey.
+		out.Imported = append(out.Imported, doctorImportedReport{Machine: name, Sessions: from[name]})
+	}
+	return out
+}
+
+// doctorPolicyReport is the trust policy in the machine form. The text report
+// has had a block for it since #661 while `--json` had no key at all, so a
+// script could not see that recall is switched off on a machine (#1027).
+type doctorPolicyReport struct {
+	// State is one of default, active, unreadable — what is in force, not what
+	// the file says, which is the distinction the text block draws too.
+	State       string                      `json:"state"`
+	Path        string                      `json:"path"`
+	Error       string                      `json:"error,omitempty"`
+	Total       int                         `json:"indexed_sessions"`
+	Activations map[string]doctorPolicyRule `json:"activations"`
+	Ignored     []string                    `json:"ignored,omitempty"`
+	Inert       []string                    `json:"inert,omitempty"`
+}
+
+type doctorPolicyRule struct {
+	Rule     string `json:"rule"`
+	Withheld int    `json:"withheld"`
+}
+
+func collectDoctorPolicy(dir string) doctorPolicyReport {
+	r := doctorPolicyReport{State: "active", Path: policy.Path(), Activations: map[string]doctorPolicyRule{}}
+	exists, unknown, err := policy.Diagnose()
+	switch {
+	case !exists:
+		r.State = "default"
+	case err != nil:
+		r.State = "unreadable"
+		r.Error = err.Error()
+	}
+	pol := policy.Load()
+	withheld, total := policyWithheldCounts(dir)
+	r.Total = total
+	for _, a := range []string{policy.ActivationSearch, policy.ActivationMCP, policy.ActivationAuto} {
+		r.Activations[a] = doctorPolicyRule{Rule: pol.Describe(a), Withheld: withheld[a]}
+	}
+	r.Ignored = unknown
+	r.Inert = unmatchedImportGroups(dir)
+	return r
+}
+
+// doctorEmbedReport is the Embedding section. State is the endpoint's —
+// unavailable or reachable — and Sidecar is the file's, which is a separate
+// thing that can fail on its own: a sidecar deja cannot parse used to read
+// exactly like never having embedded anything (#1960). Error says why, as it
+// does for sync and policy. Two fields rather than one state because the reader
+// needs both to know whether re-running `deja embed` can fix it.
+type doctorEmbedReport struct {
+	State    string  `json:"state"`
+	Sidecar  string  `json:"sidecar,omitempty"`
+	Error    string  `json:"error,omitempty"`
+	Model    string  `json:"model,omitempty"`
+	Dim      int     `json:"dim,omitempty"`
+	Coverage float64 `json:"coverage"`
+}
+
+type doctorMCPStatus struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Path  string `json:"path"`
+	// BinaryMissing is the auto_recall field of the same name: the entry is
+	// wired and names a deja binary that is no longer there (#4177).
+	BinaryMissing bool `json:"binary_missing,omitempty"`
+	// SwitchedOff marks a wired entry the user turned off, which the client
+	// will not start (#4303).
+	SwitchedOff bool `json:"switched_off,omitempty"`
+	// PluginMissing marks a dsh layer that names a deja plugin file that is
+	// gone, which keeps dsh from starting at all (#4292).
+	PluginMissing bool `json:"plugin_missing,omitempty"`
+	// Note is the caveat the text row prints under a "wired" it cannot fully
+	// vouch for: Cherry Studio's, when only the import file could be read (#4344).
+	Note string `json:"note,omitempty"`
+}
+
+type doctorCommandStatus struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Path  string `json:"path"`
+}
+
+// collectDoctorCommands reads the same table the text section prints, so the
+// two surfaces cannot disagree about whether a command is there.
+func collectDoctorCommands() []doctorCommandStatus {
+	files := doctorCommandFiles()
+	out := make([]doctorCommandStatus, 0, len(files))
+	for _, c := range files {
+		out = append(out, doctorCommandStatus{Name: c.name, State: c.state(), Path: c.path})
+	}
+	return out
+}
+
+type doctorStoreCheck struct {
+	name  string
+	paths []string
+	files []string
+	parse func(string) ([]model.Session, error)
+}
+
+func collectDoctorReport(lookup doctorVersionLookup, dir string) doctorReport {
+	stores := doctorStoreChecks()
+	report := doctorReport{SchemaVersion: jsonout.Version, Stores: make([]doctorStore, 0, len(stores))}
+	storeMods := make([]time.Time, 0, len(stores))
+	indexed := index.HarnessSessionCounts(dir)
+	fromElsewhere := index.ImportedSessionCounts(dir)
+	neverRead := index.HarnessUnreadCounts(dir)
+	for _, check := range stores {
+		store, mod := inspectDoctorStore(check)
+		store.IndexedSessions = indexed[check.name]
+		store.Imported = fromElsewhere[check.name]
+		store.NeverRead = neverRead[check.name]
+		report.Stores = append(report.Stores, store)
+		storeMods = append(storeMods, mod)
+	}
+	report.Index = inspectDoctorIndex(dir, storeMods)
+	report.Ingest = index.IngestHealth(dir)
+	report.IngestFiles = index.IngestFilesReport(dir)
+	report.MCP = collectDoctorMCP()
+	report.AutoRecall = collectDoctorAutoRecall()
+	report.Commands = collectDoctorCommands()
+	report.SQLite3 = doctorSQLite3()
+	report.Git.State = "missing"
+	if _, err := exec.LookPath("git"); err == nil {
+		report.Git.State = "ok"
+	}
+	report.Policy = collectDoctorPolicy(dir)
+	report.Sync = collectDoctorSync(dir)
+	report.Version = collectDoctorVersion(lookup)
+	report.Embed = collectDoctorEmbed(dir)
+	return report
+}
+
+// firstDeniedDir walks the store roots until something refuses to be read and
+// returns that path. The walk is bounded: doctor is a diagnostic command, but
+// a harness root can hold tens of thousands of transcripts. The second result
+// is false when the budget cut the walk short, so the caller can avoid calling
+// a half-checked store whole (#1025).
+func firstDeniedDir(paths []string) (string, bool) {
+	// Directories, not entries: a store of 50k transcripts sits in a few
+	// hundred of them, and counting files spent the budget in the first
+	// project — a locked directory later in the walk was never reached, and
+	// doctor reported the store whole (#864). A machine with a few thousand
+	// projects hit the same wall at the directory bound, so it is high enough
+	// that only a pathological tree reaches it (#1025).
+	const budget = 200_000
+	visited := 0
+	whole := true
+	home := sources.Home()
+	for _, root := range paths {
+		// aider's root is the home directory itself: any locked directory
+		// anywhere under $HOME would be blamed on aider, and the walk would
+		// cost the whole tree.
+		if root == "" || root == home {
+			continue
+		}
+		denied := ""
+		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				if os.IsPermission(err) {
+					denied = p
+					return filepath.SkipAll
+				}
+				return nil
+			}
+			if !d.IsDir() {
+				return nil
+			}
+			if visited++; visited > budget {
+				whole = false
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if denied != "" {
+			return denied, true
+		}
+	}
+	return "", whole
+}
+
+// doctorSQLite3 is `ok`, `missing`, or `broken`: on PATH and not answering a
+// query, which reads every database store as empty.
+func doctorSQLite3() doctorComponent {
+	switch problem := sources.SQLite3Problem(); {
+	case problem == "":
+		return doctorComponent{State: "ok"}
+	case sources.SQLite3Broken():
+		path, _ := exec.LookPath("sqlite3")
+		return doctorComponent{State: "broken", Path: path, Error: problem}
+	}
+	return doctorComponent{State: "missing"}
+}
+
+// storeNeedsSQLite3 names the harnesses deja reads through the sqlite3 CLI.
+func storeNeedsSQLite3(name string) bool {
+	switch name {
+	case "opencode", "cursor", "grok", "hermes", "goose", "zed", "kilocode", "zcode":
+		return true
+	}
+	return false
+}
+
+func collectDoctorEmbed(dir string) *doctorEmbedReport {
+	r := &doctorEmbedReport{State: "unavailable"}
+	reachable := false
+	if c, err := embed.New(); err == nil {
+		r.State, r.Model, reachable = "reachable", c.Model, true
+	}
+	s, err := embed.Read(dir)
+	if err != nil {
+		// A sidecar that is there and will not parse is a fault to report even
+		// when no endpoint is configured: the file is the evidence, and the
+		// endpoint is not what broke it. A Stat that fails means it is gone,
+		// which is the ordinary "nothing embedded yet" below.
+		if _, statErr := os.Stat(embed.Path(dir)); statErr == nil {
+			r.Sidecar, r.Error = "unreadable", err.Error()
+			return r
+		}
+		if !reachable {
+			return nil
+		}
+		return r
+	}
+	r.Model, r.Dim = s.Model, s.Dim
+	// Coverage the search will not use is not coverage. Vectors address records
+	// by offset, so search refuses a sidecar built for an earlier index (#1355)
+	// — and doctor is the screen someone opens to find out why semantic results
+	// stopped, which is the worst place to report 50% of a file nothing reads
+	// (#1359).
+	if embed.Stale(dir, s) {
+		return r
+	}
+	if records, err := index.ReadRecords(dir); err == nil && len(records) > 0 {
+		r.Coverage = float64(s.Covered) / float64(len(records)) * 100
+	}
+	return r
+}
+
+// ampServerSideNote is what the amp row says when Amp is installed and wrote no
+// thread file (#4355).
+const ampServerSideNote = "Amp since 2026-03-31 keeps threads on ampcode.com, not on disk"
+
+func doctorStoreChecks() []doctorStoreCheck {
+	aiderPaths := []string{sources.Home()}
+	aiderPaths = append(aiderPaths, filepath.SplitList(os.Getenv("DEJA_AIDER_ROOTS"))...)
+	// The file lists are read only for a store that is read: listing an
+	// excluded one walked it on every `deja index` and doctor (#5394).
+	checks := []struct {
+		name  string
+		paths []string
+		files func() []string
+		parse func(string) ([]model.Session, error)
+	}{
+		{"claude", sources.ClaudeRoots(), sources.ClaudeFiles, parseDoctorClaude},
+		{"codex", sources.CodexRoots(), sources.CodexFiles, parseDoctorCodex},
+		{"trae", []string{sources.TraeRoot()}, sources.TraeFiles, parseDoctorTrae},
+		{"opencode", []string{sources.OpencodeDB()}, func() []string { return presentDoctorFile(sources.OpencodeDB()) }, doctorProbeOpencode},
+		{"aider", aiderPaths, sources.AiderFiles, sources.ParseAiderFile},
+		{"gemini", []string{sources.GeminiRoot()}, sources.GeminiChatFiles, sources.ParseGeminiFile},
+		{"cursor", []string{sources.CursorUserRoot(), sources.CursorCLIRoot()}, func() []string { return append(sources.CursorTranscripts(), sources.CursorDBs()...) }, parseDoctorCursor},
+		{"antigravity", sources.AntigravityRoots(), sources.AntigravityTranscripts, sources.ParseAntigravityFile},
+		{"grok", []string{filepath.Join(sources.GrokRoot(), "sessions")}, sources.GrokSessionFiles, sources.ParseGrokFile},
+		{"hermes", []string{sources.HermesHome(), sources.HermesProfilesRoot()}, sources.HermesSessionFiles, parseDoctorHermes},
+		{"qwen", []string{filepath.Join(sources.QwenRoot(), "projects")}, sources.QwenSessionFiles, sources.ParseQwenFile},
+		{"codebuddy", sources.CodeBuddyRoots(), sources.CodeBuddySessionFiles, sources.ParseCodeBuddyFile},
+		{"kimi", []string{filepath.Join(sources.KimiRoot(), "sessions")}, sources.KimiSessionFiles, sources.ParseKimiFile},
+		{"goose", sources.GooseSessionsDirs(), sources.GooseSessionFiles, parseDoctorGoose},
+		{"continue", []string{filepath.Join(sources.ContinueRoot(), "sessions")}, sources.ContinueSessionFiles, sources.ParseContinueFile},
+		{"crush", []string{sources.CrushDataHome()}, sources.CrushDBs, sources.ParseCrushDB},
+		{"pi", []string{sources.PiRoot()}, sources.PiSessionFiles, sources.ParsePiFile},
+		{"omp", []string{sources.OmpRoot()}, sources.OmpSessionFiles, sources.ParseOmpFile},
+		{"prime", sources.PrimeRoots(), sources.PrimeSessionFiles, sources.ParsePrimeFile},
+		{"amp", []string{sources.AmpRoot()}, sources.AmpThreadFiles, sources.ParseAmpFile},
+		{"openclaw", []string{sources.OpenClawRoot()}, sources.OpenClawStoreFiles, parseDoctorOpenClaw},
+		{"copilot", []string{sources.CopilotRoot()}, sources.CopilotSessionFiles, sources.ParseCopilotFile},
+		{"copilot-chat", sources.CopilotChatRoots(), sources.CopilotChatSessionFiles, sources.ParseCopilotChatFile},
+		// Both were listed by the text rows and by nothing else: absent here,
+		// `doctor --json` never named them and "no agent history was found on
+		// this machine" was printed on a machine whose history is theirs
+		// (#999).
+		{"cline", sources.ClineStoreRoots(), sources.ClineSessionFiles, sources.ParseClineFile},
+		{"roo", sources.RooRoots(), sources.RooTaskFiles, sources.ParseRooTask},
+		// The extension's tasks and the CLI's database, both: built from the
+		// tasks alone, the row said "missing" with no paths on a machine whose
+		// every Kilo session is in the database (#4397).
+		{"kilocode", append(sources.KiloRoots(), sources.KiloDB()), sources.KiloSessionFiles, doctorProbeKilo},
+		{"cherrystudio", sources.CherryStudioAllRoots(), sources.CherryStudioSessionFiles, sources.ParseCherryStudioFile},
+		// One row for both Kiro clients: the probe picks the reader from the
+		// path, the way the ingest does.
+		{"kiro", []string{sources.KiroRoot()}, sources.KiroSessionFiles, doctorProbeKiro},
+		{"senpi", []string{sources.SenpiRoot()}, sources.SenpiSessionFiles, sources.ParseSenpiFile},
+		{"kimchi", []string{sources.KimchiRoot()}, sources.KimchiSessionFiles, sources.ParseKimchiFile},
+		{"commandcode", []string{sources.CommandCodeRoot()}, sources.CommandCodeSessionFiles, sources.ParseCommandCodeFile},
+		// The transcripts and the database, each probed with its own reader:
+		// the transcript reader answers zero for the database, which made the
+		// row read `parsed-zero` (#3675), and leaving the database out made it
+		// read `missing` for a CLI-only store (#4397).
+		{"zcode", []string{sources.ZCodeRoot(), sources.ZCodeDB(), sources.ZCodeLegacyRoot()}, sources.ZCodeSessionFiles, doctorProbeZCode},
+		{"gjc", []string{sources.GjcRoot()}, sources.GjcSessionFiles, sources.ParseGjcFile},
+		{"codewhale", sources.CodeWhaleRoots(), sources.CodeWhaleSessionFiles, sources.ParseCodeWhaleFile},
+		{"junie", []string{sources.JunieRoot()}, sources.JunieSessionFiles, sources.ParseJunieFile},
+		{"jetbrains", []string{sources.JetBrainsRoot()}, sources.JetBrainsSessionFiles, sources.ParseJetBrainsFile},
+		{"windsurf", []string{sources.WindsurfRoot()}, sources.WindsurfSessionFiles, sources.ParseWindsurfFile},
+		{"reasonix", sources.ReasonixRoots(), sources.ReasonixSessionFiles, sources.ParseReasonixFile},
+		{"muse", sources.MuseRoots(), sources.MuseSessionFiles, sources.ParseMuseFile},
+		{"deepseek", []string{sources.DeepSeekRoot()}, sources.DeepSeekSessionFiles, sources.ParseDeepSeekFile},
+		// Zed keeps one SQLite store rather than session files, so the file
+		// list is the database itself — the shape opencode's row uses.
+		{"zed", []string{sources.ZedDB()}, func() []string { return presentDoctorFile(sources.ZedDB()) }, doctorProbeZed},
+		// Devin keeps one SQLite store too, beside which a second file can be
+		// the store: the legacy name the pre-rename builds wrote.
+		{"devin", []string{sources.DevinSessionsDB(), sources.DevinLegacySessionsDB()}, sources.DevinFiles, doctorProbeDevin},
+		{"deja", []string{sources.NotesFile()}, func() []string { return presentDoctorFile(sources.NotesFile()) }, sources.ParseNotesFile},
+	}
+	// A store DEJA_STORES silences has no row: it is not missing, not empty and
+	// not unreadable, and saying any of those about a store nobody asked deja to
+	// read is the noise this variable exists to remove.
+	out := make([]doctorStoreCheck, 0, len(checks))
+	for _, c := range checks {
+		if sources.StoreSilenced(c.name) {
+			continue
+		}
+		check := doctorStoreCheck{name: c.name, paths: c.paths, parse: c.parse}
+		// An excluded store keeps its row, which says `excluded`.
+		if !sources.HarnessExcluded(c.name) {
+			check.files = c.files()
+		}
+		out = append(out, check)
+	}
+	return out
+}
+
+// doctorProbeKiro reads one Kiro transcript with the reader its path belongs
+// to, so a store written by the IDE, or kiro-cli's database, is not probed
+// with the CLI's parser and reported empty.
+func doctorProbeKiro(path string) ([]model.Session, error) {
+	if path == sources.KiroDB() {
+		return sources.ParseKiroDB(path)
+	}
+	if sources.KiroUnderIDE(path) {
+		return sources.ParseKiroIDEFile(path)
+	}
+	return sources.ParseKiroCLIFile(path)
+}
+
+// doctorProbeKilo and doctorProbeZCode read the newest file with the reader
+// its path belongs to: the CLI database through OpenCode's schema, anything
+// else as the extension task or transcript it is.
+func doctorProbeKilo(path string) ([]model.Session, error) {
+	if path == sources.KiloDB() {
+		return sources.ParseKiloDB(path)
+	}
+	return sources.ParseKiloTask(path)
+}
+
+func doctorProbeZCode(path string) ([]model.Session, error) {
+	if path == sources.ZCodeDB() {
+		return sources.ParseZCodeDB(path)
+	}
+	if sources.ZCodeLegacyUnderRoot(path) {
+		return sources.ParseZCodeLegacyFile(path)
+	}
+	return sources.ParseZCodeFile(path)
+}
+
+// doctorProbeZed reads the thread store the way the indexer does, so the row
+// says what a real read would find rather than that the file exists.
+func doctorProbeZed(path string) ([]model.Session, error) {
+	return sources.ParseZedDB(path)
+}
+
+// doctorProbeDevin reads one of Devin's two store names with the same parser
+// both feed: the legacy cli_sessions.db is the same schema, not a second
+// format.
+func doctorProbeDevin(path string) ([]model.Session, error) {
+	return sources.ParseDevinDB(path)
+}
+
+// anotherFileOpens reports whether any file besides one already known to be
+// unreadable can be opened. Bounded: a store can hold tens of thousands of
+// files and doctor is not an audit — one that opens is enough to know the store
+// is partly readable, and the bound keeps a wholly locked store from costing a
+// syscall each.
+func anotherFileOpens(files []string, except string) bool {
+	const probe = 64
+	tried := 0
+	for _, p := range files {
+		if p == except {
+			continue
+		}
+		if tried >= probe {
+			return false
+		}
+		tried++
+		if f, err := os.Open(p); err == nil {
+			_ = f.Close()
+			return true
+		}
+	}
+	return false
+}
+
+// stateForMissingTool names the state by the tool that is missing. zed and
+// deepseek need zstd rather than sqlite3, and calling that "needs-sqlite3"
+// sends the reader to install the wrong package (#1758).
+func stateForMissingTool(reason string) string {
+	if strings.Contains(reason, "sqlite3") {
+		return "needs-sqlite3"
+	}
+	if strings.Contains(reason, "zstd") {
+		return "needs-zstd"
+	}
+	return "unreadable"
+}
+
+func presentDoctorFile(path string) []string {
+	// By content: an empty notes file is not a store with something in it, and
+	// counting it made the two forms of this command disagree about the same
+	// row — `missing` in the text, `ok` in JSON (#999).
+	if fi, err := os.Stat(path); err == nil && !fi.IsDir() && fi.Size() > 0 {
+		return []string{path}
+	}
+	return nil
+}
+
+func parseDoctorClaude(path string) ([]model.Session, error) {
+	if sources.IsClaudeHistory(path) {
+		return sources.ParseClaudeHistory(path)
+	}
+	return sources.ParseClaudeFile(path)
+}
+
+func parseDoctorCodex(path string) ([]model.Session, error) {
+	if filepath.Base(path) == "history.jsonl" {
+		return sources.ParseCodexHistory(path)
+	}
+	return sources.ParseCodexRollout(path)
+}
+
+func parseDoctorTrae(path string) ([]model.Session, error) {
+	if filepath.Base(path) == "history.jsonl" {
+		return sources.ParseTraeHistory(path)
+	}
+	return sources.ParseTraeRollout(path)
+}
+
+// parseDoctorOpenClaw reads whichever OpenClaw store the newest path is: the
+// per-agent SQLite database of 2026.8 or a JSONL transcript from before it.
+func parseDoctorOpenClaw(path string) ([]model.Session, error) {
+	if filepath.Base(path) == "openclaw-agent.sqlite" {
+		return sources.ParseOpenClawDB(path)
+	}
+	return sources.ParseOpenClawFile(path)
+}
+
+func parseDoctorCursor(path string) ([]model.Session, error) {
+	if filepath.Base(path) == "state.vscdb" {
+		return sources.ParseCursorDB(path)
+	}
+	return sources.ParseCursorTranscript(path)
+}
+
+func parseDoctorGoose(path string) ([]model.Session, error) {
+	if filepath.Base(path) == "sessions.db" {
+		return sources.ParseGooseDB(path)
+	}
+	return sources.ParseGooseFile(path)
+}
+
+// parseDoctorHermes probes the SQLite stores by file and the Postgres store by
+// DSN, so a PG-backed Hermes reports its real health instead of the frozen
+// pre-cutover state.db (#1018).
+func parseDoctorHermes(path string) ([]model.Session, error) {
+	if sources.IsHermesPGStore(path) {
+		return sources.ParseHermesPG(sources.HermesPGDSN(), 0)
+	}
+	return sources.ParseHermesDB(path)
+}
+
+func inspectDoctorStore(check doctorStoreCheck) (doctorStore, time.Time) {
+	store, mod, newest := probeDoctorStore(check)
+	if newest == "" {
+		return store, mod
+	}
+	return parseDoctorStore(check, store, mod, newest)
+}
+
+// probeDoctorStore is the half of the inspection that needs no parser: every
+// root statted and listed, and the newest file opened. Every "denied" answer
+// comes from here, so a caller asking only that stops here — the parse that
+// follows read a whole SQLite store again on every `deja index` (#4272).
+// newest is "" when the answer is already final.
+func probeDoctorStore(check doctorStoreCheck) (store doctorStore, mod time.Time, newest string) {
+	store = doctorStore{Name: check.name, State: "missing", Paths: check.paths, Files: len(check.files)}
+	// A store the reader has excluded is answered before anything is read. The
+	// row said `needs-sqlite3` or `needs-zstd` for a harness they may never
+	// want read, which names a package to install for a problem they do not
+	// have, and the exclude file had no way to say so (#3499).
+	if sources.HarnessExcluded(check.name) {
+		store.State = "excluded"
+		return store, time.Time{}, ""
+	}
+	// A store with more than one root can be half-readable, and this loop
+	// returns on the first refusal — the walk below has said so since #816
+	// while this said the whole harness was denied (#3407).
+	denyRoot := func(path string) (doctorStore, time.Time, string) {
+		store.State = "denied"
+		store.Denied = path
+		store.Partial = len(check.files) > 0
+		return store, time.Time{}, ""
+	}
+	for _, path := range check.paths {
+		if path == "" {
+			continue
+		}
+		fi, err := os.Stat(path)
+		if err != nil {
+			if os.IsPermission(err) {
+				return denyRoot(path)
+			}
+			continue
+		}
+		if fi.IsDir() {
+			f, err := os.Open(path)
+			if err != nil {
+				if os.IsPermission(err) {
+					return denyRoot(path)
+				}
+				continue
+			}
+			_, err = f.Readdirnames(1)
+			_ = f.Close()
+			if err != nil && err != io.EOF && os.IsPermission(err) {
+				return denyRoot(path)
+			}
+		}
+	}
+	// The file collectors swallow EACCES, so a locked directory silently takes
+	// its sessions out of recall. With no files at all that read as a harness
+	// nobody has used (#802); with some files it read as a complete store
+	// missing a few, which is quieter still (#816).
+	denied, whole := firstDeniedDir(check.paths)
+	if denied != "" {
+		store.State = "denied"
+		store.Denied = denied
+		store.Partial = len(check.files) > 0
+		return store, time.Time{}, ""
+	}
+	// Nothing refused to be read *of what was walked*. Saying "found" for a
+	// store whose walk stopped early is the same silence #864 closed, one
+	// order of magnitude up (#1025).
+	store.Unchecked = !whole
+	if len(check.files) == 0 {
+		if check.name == "amp" && sources.AmpThreadsServerSide() {
+			store.Note = ampServerSideNote
+		}
+		// The text rows have separated a store whose disk went away from one
+		// that was deleted since #933; a script reading this could not (#999).
+		for _, p := range check.paths {
+			if p != "" && storeDiskGone(p) {
+				store.State = "unplugged"
+				break
+			}
+		}
+		return store, time.Time{}, ""
+	}
+	// A transcript whose mode refuses a read is the same fault in any file,
+	// not only the newest one this probe opens; the walk that indexes it says
+	// so from the same stat (#5393).
+	var unreadable string
+	newest, mod, unreadable = newestDoctorFile(check.files)
+	if unreadable != "" {
+		store.State = "denied"
+		store.Denied = unreadable
+		store.Partial = anotherFileOpens(check.files, unreadable)
+		return store, mod, ""
+	}
+	f, err := os.Open(newest)
+	if err != nil {
+		if os.IsPermission(err) {
+			// A file deja may not open is the same fault as a directory it may
+			// not list, and has the same answer: name it and say it is
+			// permissions. Calling it "unreadable" told the user their harness
+			// had changed its format and asked them to report it (#1747).
+			store.State = "denied"
+			store.Denied = newest
+			// "Partly readable" has to mean something did read: a store whose
+			// files are all locked is not partly anything, and saying "some
+			// sessions are missing" there understates it.
+			store.Partial = anotherFileOpens(check.files, newest)
+			return store, mod, ""
+		}
+		store.State = "parsed-zero"
+		return store, mod, ""
+	}
+	_ = f.Close()
+	return store, mod, newest
+}
+
+func parseDoctorStore(check doctorStoreCheck, store doctorStore, mod time.Time, newest string) (doctorStore, time.Time) {
+	sessions, parseErr := check.parse(newest)
+	store.State = "ok"
+	// A store can be half-readable: cursor keeps CLI transcripts as JSONL and
+	// its IDE sessions in SQLite, so the newest file can parse while the other
+	// half cannot be read at all. The text row has said so in its detail all
+	// along; this form called the store ok (#1758).
+	if reason := sources.SkipReason(check.name); reason != "" {
+		store.State = stateForMissingTool(reason)
+		store.Skipped = reason
+		store.Partial = len(check.files) > 1
+		return store, mod
+	}
+	// A parser that could not run is not a store that could not be understood.
+	// Without this, removing the sqlite3 CLI told the user their harness had
+	// changed its format and asked them to report it — two lines above deja
+	// naming the missing CLI itself (#792).
+	if parseErr != nil && storeNeedsSQLite3(check.name) && !sources.SQLite3Available() {
+		store.State = "needs-sqlite3"
+		store.Skipped = sources.SQLite3Problem()
+		return store, mod
+	}
+	// A parser that refuses to read the store is the loudest thing doctor can
+	// learn, and it used to be discarded: a harness that changed its schema
+	// showed up here as a healthy store while its recall was empty.
+	if parseErr != nil {
+		store.State = "unreadable"
+		// Bounded: a sqlite3 error can quote the query, and the query is a
+		// screenful. The head of it names the cause — a missing column, a
+		// locked database, a file that is not a database at all.
+		store.Error = boundedStoreError(parseErr.Error())
+		return store, mod
+	}
+	// A session someone opened and closed without typing parses to nothing,
+	// correctly. Calling that a parse failure sends people looking for a bug
+	// in deja when the file simply holds no conversation — so only a file
+	// with something to parse counts.
+	if len(sessions) == 0 && !fileHasConversation(newest) {
+		return store, mod
+	}
+	if len(sessions) == 0 {
+		store.State = "parsed-zero"
+	}
+	return store, mod
+}
+
+// newestDoctorFile is the most recently modified of files with its time, and
+// the first of them in path order whose mode says this process may not read
+// it. One stat a file, on every core: a walk for each answer was a third of
+// what `deja index` spent after its pass on a 40,000-session store (#5471).
+func newestDoctorFile(files []string) (newest string, mod time.Time, unreadable string) {
+	files = append([]string(nil), files...)
+	sort.Strings(files)
+	refused := make([]bool, len(files))
+	mods := make([]time.Time, len(files))
+	parallelChunks(len(files), func(i int) {
+		fi, err := os.Lstat(files[i])
+		if err != nil {
+			return
+		}
+		refused[i] = sources.ModeUnreadable(files[i], fi)
+		// The time is the file's, not a link's.
+		if !fi.Mode().IsRegular() {
+			if fi, err = os.Stat(files[i]); err != nil {
+				return
+			}
+		}
+		mods[i] = fi.ModTime()
+	})
+	newest = files[0]
+	for i, path := range files {
+		if unreadable == "" && refused[i] {
+			unreadable = path
+		}
+		if mods[i].After(mod) {
+			newest, mod = path, mods[i]
+		}
+	}
+	return newest, mod, unreadable
+}
+
+func inspectDoctorIndex(dir string, storeMods []time.Time) doctorIndexReport {
+	result := doctorIndexReport{State: "missing", Path: dir}
+	if !index.HasManifest(dir) {
+		// A file where the directory belongs reads as "never built" on both
+		// surfaces, and the fix is not the one `missing` implies: a build
+		// refuses to run here rather than deleting what is there (#3610).
+		if fi, err := os.Stat(dir); err == nil && !fi.IsDir() {
+			result.State = "path-is-a-file"
+		}
+		return result
+	}
+	result.State = "ok"
+	if ov, err := index.Overview(dir); err == nil {
+		result.SessionsAhead = ov.Future
+	}
+	// When deja last read the stores, not when the manifest was last written:
+	// a sync import writes the manifest and never looks at a local
+	// transcript, so comparing against the build time reported zero stale
+	// stores on a machine that syncs on a timer (#3747).
+	readAt := index.ManifestSourcesReadAt(dir)
+	if readAt.IsZero() {
+		// An import built this index and nothing local has been read; a
+		// machine reading the JSON should not have to infer that from an
+		// absent field.
+		result.SourcesReadAt = "never"
+	} else {
+		result.SourcesReadAt = readAt.UTC().Format(time.RFC3339)
+	}
+	for _, mod := range storeMods {
+		if !mod.IsZero() && mod.After(readAt) {
+			result.StaleStores++
+		}
+	}
+	// Damage outranks staleness: a store that cannot answer is not merely
+	// behind. The human report has named this since #735 while the JSON called
+	// the same store "ok", so a script watching it for index health was told
+	// everything was fine (#2292).
+	if index.Damaged(dir) {
+		result.State = "damaged"
+		return result
+	}
+	// And the format, on the same terms. Two of the four states answer nothing
+	// until the sources are re-read, which is not staleness either: `deja
+	// index` is the fix for both, but a stale store still recalls while these
+	// do not, and that is the distinction a health check is looking for.
+	switch indexReadState(dir) {
+	case index.ReadStateUnreadable:
+		result.Format, result.State = "unreadable", "rereading"
+		return result
+	case index.ReadStateWithheld:
+		result.Format, result.State = "withheld", "rereading"
+		return result
+	case index.ReadStateOlderRules:
+		result.Format = "older-rules"
+	case index.ReadStateNewer:
+		result.Format = "newer"
+	}
+	if result.StaleStores > 0 {
+		result.State = "stale"
+		// "run `deja index`" is the advice attached to `stale`, and it cannot
+		// be followed when the index cannot be written: the build fails with
+		// the same permission error every time. search says so on this exact
+		// state; doctor called it ordinary staleness (#1004).
+		if !indexDirWritable(dir) {
+			result.State = "stale-readonly"
+		}
+	}
+	return result
+}
+
+// collectDoctorAutoRecall reads the same files and asks the same questions as
+// the rows doctorAutoRecall prints, so the two surfaces cannot disagree about
+// whether an install is live.
+func collectDoctorAutoRecall() []doctorAutoStatus {
+	wirings := autoWirings()
+	out := make([]doctorAutoStatus, 0, len(wirings)+2)
+	// Claude Code and codex predate the table and print their own text lines,
+	// and so were the two rows this section did not have — the harness most
+	// people run, missing from the machine-readable half of the one report that
+	// says whether a hook still works (#3502, #3510).
+	for _, st := range []hookWiringState{claudeHookWiringState(), codexHookWiringState()} {
+		out = append(out, doctorAutoStatus{Name: st.name, State: st.state, Path: st.path, BinaryMissing: st.dead,
+			SwitchedOff: st.state == "wired" && clientHooksOff(st.name) != ""})
+	}
+	for _, a := range wirings {
+		state, dead := autoWiringState(a)
+		out = append(out, doctorAutoStatus{Name: a.name, State: state, Path: a.path(), BinaryMissing: dead,
+			SwitchedOff: state == "wired" && autoWiringSwitchedOff(a.name) != ""})
+	}
+	return out
+}
+
+func collectDoctorMCP() []doctorMCPStatus {
+	configs := doctorMCPConfigs()
+	out := make([]doctorMCPStatus, 0, len(configs))
+	for _, config := range configs {
+		state := "config-missing"
+		if doctorExists(config.path) {
+			state = "not-wired"
+			if config.wired(config.path) {
+				state = "wired"
+			}
+		}
+		row := doctorMCPStatus{Name: config.name, State: state, Path: config.path}
+		if state == "wired" && config.name == "pi" {
+			if note := piMCPUnreadNote(); note != "" {
+				row.State, row.Note = "no-adapter", note
+				out = append(out, row)
+				continue
+			}
+		}
+		// The check the text report has made since #2216: declared is not the
+		// same as able to start.
+		if state == "wired" && dejaCommandMissing(config.path) != "" {
+			row.BinaryMissing = true
+		}
+		if state == "wired" && (dejaEntrySwitchedOff(config.name, config.path) || doctorMCPSwitchedOff(config.name) != "") {
+			row.SwitchedOff = true
+		}
+		if state == "wired" && config.name == "workbuddy" {
+			if note := workBuddyUntrustedNote(); note != "" {
+				row.State, row.Note = "untrusted", note
+			}
+		}
+		if state == "wired" && config.name == "deepseek" && len(dshPluginsMissing(config.path)) > 0 {
+			row.PluginMissing = true
+		}
+		// The app's own table, when it can be read, rather than the file it
+		// imports from (#4344).
+		if config.name == "cherrystudio" {
+			if known, wired, off, db, missing := cherryStudioAppWiring(); known {
+				// The import file's own flags say nothing about the app's copy.
+				row.BinaryMissing, row.SwitchedOff = false, false
+				switch {
+				case off:
+					row.State, row.Path = "disabled", db
+				case wired:
+					row.State, row.Path, row.BinaryMissing = "wired", db, missing != ""
+				case state != "config-missing":
+					row.State = "not-imported"
+				}
+			} else if state == "wired" {
+				row.Note = doctorWiringNote(config.name)
+			}
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func collectDoctorVersion(lookup doctorVersionLookup) doctorVersionReport {
+	report := doctorVersionReport{State: "unknown", Current: version}
+	if lookup == nil {
+		report.State = "offline"
+		return report
+	}
+	latest, ok := lookup()
+	if !ok {
+		return report
+	}
+	report.Latest = latest
+	current := normalizeUpdateVersion(version)
+	order, comparable := compareUpdateVersions(current, latest)
+	if !comparable {
+		if current == "dev" || current == "" {
+			report.State = "dev"
+		}
+		return report
+	}
+	switch {
+	case order < 0:
+		report.State = "update-available"
+	case order > 0:
+		report.State = "ahead"
+	default:
+		report.State = "ok"
+	}
+	return report
+}
+
+func doctorParsedZeroWarning() string {
+	var names []string
+	for _, check := range doctorStoreChecks() {
+		store, _ := inspectDoctorStore(check)
+		if store.State == "parsed-zero" {
+			names = append(names, store.Name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "warning: " + strings.Join(names, ", ") + " files found but newest parsed to zero"
+}
+
+// fileHasConversation reports whether a store file holds anything that should
+// have produced a message. Harness files begin with setup records — protocol
+// metadata, model config, tool lists — and a session that was opened and never
+// used contains only those.
+func fileHasConversation(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return true // unreadable is a real problem; let the caller flag it
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(io.LimitReader(f, 1<<20))
+	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for sc.Scan() {
+		line := sc.Bytes()
+		for _, marker := range [][]byte{
+			[]byte(`"role":"user"`), []byte(`"role": "user"`),
+			[]byte(`"role":"assistant"`), []byte(`"role": "assistant"`),
+			[]byte(`"type":"user"`), []byte(`"type":"assistant"`),
+			[]byte("#### "),
+		} {
+			if bytes.Contains(line, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// doctorProbeOpencode answers the only question the store check asks — does
+// this store parse into sessions — without reading all of it. Parsing the
+// whole database took 6.5 seconds of doctor's 8 on a 2.8 GB store, and every
+// row after the first few adds nothing to the answer.
+func doctorProbeOpencode(db string) ([]model.Session, error) {
+	// A plain limit does not help: the query orders by session and message
+	// time, so sqlite sorts the whole join before it can take the first row.
+	// Narrowing to the newest session first is what makes this cheap.
+	return sources.ParseOpencodeNewest(db)
+}
+
+// storeErrorMax is how much of a parser's complaint the report carries. Long
+// enough for the sentence sqlite3 leads with, short enough that a quoted query
+// does not become the report.
+const storeErrorMax = 300
+
+func boundedStoreError(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
+		msg = strings.TrimSpace(msg[:i])
+	}
+	if len(msg) > storeErrorMax {
+		msg = strings.TrimSpace(msg[:storeErrorMax]) + "…"
+	}
+	return msg
+}

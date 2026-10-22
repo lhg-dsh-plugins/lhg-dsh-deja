@@ -1,0 +1,76 @@
+{
+  "name": "dsh-deja",
+  "version": "0.23.1",
+  "description": "deja-vu memory for DeepSeek Harness: the session history of forty-one other coding agents, searchable and recalled before each step — a local index, no LLM.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "docs/zh.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lhg-dsh-plugins/lhg-dsh-deja.git",
+    "directory": "extensions/dsh"
+  },
+  "homepage": "https://vshulcz.github.io/deja-vu/guide/memory-for-dsh.html",
+  "bugs": {
+    "url": "https://github.com/vshulcz/deja-vu/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "memory",
+    "recall",
+    "session-history",
+    "migration",
+    "agent-memory",
+    "ai-memory",
+    "coding-agent",
+    "claude-code",
+    "claude-code-memory",
+    "codex",
+    "cursor",
+    "gemini-cli",
+    "mcp",
+    "mcp-server",
+    "session-search",
+    "local-first"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    },
+    "compatibility": {
+      "dsh": "0.2.0-rc.2",
+      "dshReleases": {
+        "0.1.1-rc.2": "compatible",
+        "0.2.0-rc.2": "compatible"
+      }
+    }
+  },
+  "dependencies": {
+    "@vshulcz/deja-vu": "^0.23.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

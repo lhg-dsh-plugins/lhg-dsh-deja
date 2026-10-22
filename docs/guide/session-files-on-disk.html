@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to delete Claude Code sessions — deja-vu</title>
+<meta name="description" content="One session: rm its .jsonl, or pick it from a list. A whole project: claude project purge. On a timer: cleanupPeriodDays. What /clear does.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/session-files-on-disk.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="How to delete Claude Code sessions">
+<meta property="og:description" content="One session: rm its .jsonl, or pick it from a list. A whole project: claude project purge. On a timer: cleanupPeriodDays. What /clear does.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="How to delete Claude Code sessions">
+<meta name="twitter:description" content="One session: rm its .jsonl, or pick it from a list. A whole project: claude project purge. On a timer: cleanupPeriodDays. What /clear does.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "How to delete Claude Code sessions, and what you lose", "description": "One session: rm its .jsonl, or pick it from a list. A whole project: claude project purge. On a timer: cleanupPeriodDays. What /clear does.", "url": "https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-09-02", "dateModified": "2026-10-17"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "deja-vu", "item": "https://vshulcz.github.io/deja-vu/"}, {"@type": "ListItem", "position": 2, "name": "Session files on disk", "item": "https://vshulcz.github.io/deja-vu/guide/session-files-on-disk.html"}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is there a command to delete Claude Code sessions?", "acceptedAnswer": {"@type": "Answer", "text": "For a whole project, yes: claude project purge (Claude Code 2.1.126 and later) deletes its transcripts, memory directory, file-edit history and ~/.claude.json entry; --dry-run lists them first and --all does every project. A single session has no command: remove its .jsonl file under ~/.claude/projects."}}, {"@type": "Question", "name": "Does Claude Code delete old sessions by itself?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Transcripts under ~/.claude/projects are kept for 30 days by default and then removed; the setting is cleanupPeriodDays in ~/.claude/settings.json. Raise it to keep them."}}, {"@type": "Question", "name": "How do I delete a Claude Code session?", "acceptedAnswer": {"@type": "Answer", "text": "Delete its file: rm ~/.claude/projects/<project-dir>/<session-id>.jsonl. Remove the project directory to drop every session of that project, or set cleanupPeriodDays in ~/.claude/settings.json to have Claude Code delete sessions older than N days on its own. The session leaves claude --resume immediately; prompt history in ~/.claude/history.jsonl is separate."}}, {"@type": "Question", "name": "How do I delete all Claude Code sessions?", "acceptedAnswer": {"@type": "Answer", "text": "rm -rf ~/.claude/projects/* removes every session of every project; rm -rf ~/.claude/projects/<project-dir> removes one project's. Prompt history is a separate file, ~/.claude/history.jsonl, and survives both."}}, {"@type": "Question", "name": "Does Claude Code archive sessions instead of deleting them?", "acceptedAnswer": {"@type": "Answer", "text": "No. There is no archive: a session that no longer appears in claude --resume was swept by cleanupPeriodDays and its file is gone. The resume list is built from the files on disk."}}, {"@type": "Question", "name": "Can I delete Claude Code session files?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, nothing in the agent breaks. You lose the ability to resume those sessions, any future search over that history, and your record of what the agent ran. Deleting the largest few files usually frees the space without losing much history."}}, {"@type": "Question", "name": "Where does Claude Code store session files?", "acceptedAnswer": {"@type": "Answer", "text": "Under ~/.claude/projects, one directory per project and one JSONL file per session, unless CLAUDE_CONFIG_DIR points elsewhere. Codex uses ~/.codex/sessions and Cursor uses a SQLite state.vscdb."}}, {"@type": "Question", "name": "How much disk space do Claude Code sessions use?", "acceptedAnswer": {"@type": "Answer", "text": "On one machine with thirteen projects and two months of heavy daily use: 875 files totalling 1.6 GB, median 304 KB per session, with a single runaway session accounting for 586 MB."}}, {"@type": "Question", "name": "What is inside a Claude Code .jsonl session file?", "acceptedAnswer": {"@type": "Answer", "text": "JSON Lines: one object per line, appended as the session runs, each carrying a role, timestamp, session id and payload — your prompt, the assistant reply, or a tool call and its output, verbatim."}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold"><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold" open><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html" aria-current="page">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>How to delete Claude Code sessions, and what you lose</h1>
+<p class="pagelede">they are files under <code>~/.claude/projects</code>: <code>rm</code> is the whole operation, and <code>cleanupPeriodDays</code> does it on a timer<span class="mins" data-mins></span></p>
+
+<p>Every session your agent runs is written to disk as it happens. Claude Code puts JSONL under <code>~/.claude/projects</code>, one directory per project and one file per session; Codex writes <code>~/.codex/sessions/**/rollout-*.jsonl</code> (<a href="delete-codex-sessions.html">deleting those</a>); Cursor keeps chats in a SQLite database (<a href="delete-cursor-chat-history.html">deleting those</a>). <a href="where-sessions-are-stored.html">Where each agent writes</a> has the rest.</p>
+<p>Nobody tells you these files exist until they are large — 875 of them and 1.6 GB on the laptop measured below, one file of which was 586 MB.</p>
+
+<h2>How to delete Claude Code sessions</h2>
+<p>From the terminal, a whole project goes with one command: <code>claude project purge</code>, in Claude Code since 2.1.126. It deletes the project's transcripts, and with them its <code>memory/</code> directory, the file-edit history of each session, and the project's entry in <code>~/.claude.json</code> (trust, prompt history, MCP servers). Run it with <code>--dry-run</code> first; it prints exactly that list.</p>
+<p>A single session has no command. It is a file, and deleting the file is the whole operation. The directory name is the project path with slashes turned into dashes, the file name is the session id. (<code>claude rm &lt;id&gt;</code> is for background sessions started with <code>claude --bg</code>, not for these.)</p>
+<p>Or pick it from a list. In <a href="https://github.com/vshulcz/deja-vu">deja</a>'s terminal UI, <code>D</code> on a session erases it from Claude Code, or from Codex, Cursor CLI, Gemini CLI, Qwen Code, Copilot CLI and the other agents whose sessions are files of their own, and drops deja's copy with it. It asks first and there is no undo. <code>deja delete &lt;id&gt;</code> does the same from a script; <code>--dry-run</code> lists the files it would remove. A session that is still running is refused.</p>
+<p><code>/clear</code> does not delete anything either. It starts a new conversation with an empty context; the one before it stays on disk as its own <code>.jsonl</code>.</p>
+<pre># every session of this project, and the state that goes with it
+claude project purge --dry-run      # see what would be deleted
+claude project purge
+
+# every project
+claude project purge --all
+
+# one session: see what is there, newest first, then remove the file
+ls -t ~/.claude/projects/-Users-you-project/*.jsonl
+rm ~/.claude/projects/-Users-you-project/&lt;session-id&gt;.jsonl
+
+# or for any agent: D in the deja TUI, or
+deja delete &lt;session-id&gt; --dry-run   # the files it would remove
+deja delete &lt;session-id&gt;             # from the agent and from deja, no undo
+
+# or let Claude Code do it: sessions older than N days go on their own
+# ~/.claude/settings.json
+{ "cleanupPeriodDays": 7 }</pre>
+<p>Three things people expect and do not get. A session you delete disappears from <code>claude --resume</code> at once; that list is built from the files. Your prompt history is a separate file, <code>~/.claude/history.jsonl</code>, and stays until you delete it too. It keeps what you typed and pasted with the session id, so deja reads the prompts of a session whose transcript is gone from it, though the replies and tool calls are not there. And there is no archive: a session that is no longer in <code>--resume</code> was swept by <code>cleanupPeriodDays</code>, and the file is gone, not archived. Before you delete by hand, the sections below say what the files cost you and what you lose.</p>
+<p>If one of those sessions might matter later, index them before you delete: <a href="https://github.com/vshulcz/deja-vu">deja</a> keeps a searchable copy of every session it has read, and <code>deja resume &lt;id&gt; --write-back</code> puts one back where <code>claude --resume</code> finds it. Already gone? <a href="recover-a-deleted-session.html">What is still recoverable</a>, and what <a href="no-conversation-found-claude-code.html">No conversation found with session ID</a> means.</p>
+
+<h2>How big they actually get</h2>
+<p>One developer's <code>~/.claude/projects</code>: thirteen projects, two months of heavy daily use.</p>
+<table>
+<tr><th>Measure</th><th>Value</th></tr>
+<tr><td>Session files</td><td>875</td></tr>
+<tr><td>Total size</td><td>1.6 GB</td></tr>
+<tr><td>Median file</td><td>304 KB</td></tr>
+<tr><td>90th percentile</td><td>644 KB</td></tr>
+<tr><td>Largest single file</td><td>586 MB</td></tr>
+</table>
+<p>The distribution is the interesting part: a typical session costs a third of a megabyte, and a handful of runaway sessions carry most of the gigabytes. Growth is driven by tool output, not by how much you typed — a session that catted large files or ran a chatty build is orders of magnitude bigger than one where you talked through a design.</p>
+<p>To find yours:</p>
+<pre>du -sh ~/.claude/projects
+find ~/.claude/projects -name '*.jsonl' -size +50M</pre>
+
+<h2>What is inside one</h2>
+<p>A Claude Code session file is JSON Lines: one JSON object per line, appended as the session runs. Each record carries a role, a timestamp, a session id and the payload — your prompt, the assistant's reply, or a tool call with its result. Codex, Copilot CLI and Antigravity use the same line-per-record shape with different field names; Cursor, Zed, Goose and Hermes use SQLite instead. The <a href="../registry/README.html">format registry</a> documents each one field by field.</p>
+<p>Two consequences worth knowing. It is plain text, so <code>grep</code> works and so does any tool you write. And it is verbatim: whatever scrolled past in your terminal is in there, including anything a command printed. Treat the directory as you would your shell history.</p>
+
+<h2>Claude Code deletes them for you</h2>
+<p>By default Claude Code keeps a transcript for <b>30 days</b> and then removes it — the setting is <code>cleanupPeriodDays</code> in <code>~/.claude/settings.json</code>, documented under <a href="https://code.claude.com/docs/en/data-usage#data-retention">data retention</a>. Nothing announces it; people notice when <code>--resume</code> no longer lists a session they had in June. If you want the files to stay, raise the number before the month is up:</p>
+<pre>{ "cleanupPeriodDays": 3650 }</pre>
+<p>deja keeps what it indexed: a transcript the sweep removes stays searchable, because the index does not follow a single file out the door — only <code>deja forget</code> drops a session on purpose. The files themselves, though, are gone, and so is <code>--resume</code> for them, until you put one back: the Deleted tab of the interactive screen (<code>deja</code> with no arguments) lists what deja still holds, and <code>R</code> writes a session back where <code>--resume</code> finds it, as does <code>deja resume &lt;id&gt; --write-back</code>. <code>deja install</code> says when the sweep is on, and once a week the note at session start says how many deleted sessions deja kept, with an id to put back.</p>
+<p>The sweep is Claude Code's own, not a cron job, and it pauses whenever the client cannot safely determine the retention period — which is why the machine measured above, on the default setting, still holds 69 files older than 31 days. Do not read that as safety. The documented behaviour is deletion after 30 days, and the day the sweep runs is the day the June session goes.</p>
+
+<h2>Are old sessions archived anywhere?</h2>
+<p>Not for the terminal sessions under <code>~/.claude/projects</code>. There is no archive, no trash and no recycle bin there: a session that has left <code>claude --resume</code> was swept by <code>cleanupPeriodDays</code> and its file is deleted. The resume list has no store of its own — it is built by reading <code>~/.claude/projects</code> each time — so a session missing from it is a file missing from disk.</p>
+<p>Two things are worth checking before you accept that a session is gone. A Time Machine or Backblaze snapshot from before the sweep still holds the JSONL file, and restoring it puts the session back in <code>--resume</code>. And an index built while the file existed still answers from it: that is the one copy that survives the sweep by design.</p>
+
+<h2>The same question in VS Code</h2>
+<p>The Claude Code extension for VS Code runs the same Claude Code underneath and writes the same files: its conversations are the JSONL under <code>~/.claude/projects</code>, in the directory named after the workspace folder. Everything above applies unchanged, <code>claude project purge</code> included, and a deleted file leaves the extension's list of past conversations the same way it leaves <code>--resume</code>.</p>
+<p>GitHub Copilot Chat in VS Code is a different agent and does not use <code>~/.claude</code>. Its sessions live in the workspace storage of the VS Code profile — <code>~/Library/Application Support/Code/User/workspaceStorage/&lt;hash&gt;/chatSessions</code> on macOS, <code>~/.config/Code/User/workspaceStorage</code> on Linux, <code>%APPDATA%\Code\User\workspaceStorage</code> on Windows — one JSONL file per chat (JSON before VS Code 1.109, and newer builds also write <code>GitHub.copilot-chat/transcripts</code> beside it), under a directory whose name is a hash rather than the project's — the file beside it is what says which workspace it belongs to. <a href="delete-copilot-chat-history.html">Deleting VS Code Copilot Chat history</a> covers the paths and what the editor does when they are gone; <a href="where-sessions-are-stored.html">where sessions are stored</a> has the same for every other agent.</p>
+
+<h2>Can you delete them yourself?</h2>
+<p>Yes — nothing in the agent breaks. What you lose:</p>
+<ul>
+<li><b>Resume.</b> <code>claude --resume</code> lists sessions by reading these files. Delete one and it disappears from the list.</li>
+<li><b>Any history search, forever.</b> Anything that answers "have I hit this before?" reads these files. Deleted transcripts are not recoverable and cannot be re-derived — the agent will not reconstruct them.</li>
+<li><b>Your own audit trail.</b> It is the only record of what an agent actually ran in your repository. See <a href="auditing-agents.html">auditing an agent</a>.</li>
+</ul>
+<p>If you need the space back, delete narrowly rather than emptying the directory:</p>
+<pre># the few outliers, which is usually all the space you need
+find ~/.claude/projects -name '*.jsonl' -size +100M -ls
+
+# a project you will never open again
+claude project purge ~/code/old-project</pre>
+<p>Deleting by age is the tempting one and the one to avoid: old sessions are exactly the ones you no longer remember, so they are worth the most per byte. If you do want it, <a href="delete-old-claude-sessions.html">deleting old Claude Code sessions</a> has the <code>find -mtime</code> line and what it frees.</p>
+
+<h2>Backing them up</h2>
+<p>They are ordinary files, so any backup tool works. If you want them readable somewhere else — a different machine, a different agent, or as Markdown — see <a href="export-conversations.html">exporting sessions</a> and <a href="sync-across-machines.html">across machines</a>.</p>
+
+<h2>Making them useful instead of just large</h2>
+<p>The files are already a complete record of every problem you have solved. What they lack is a way in: opening the right 300 KB file out of 875 is not a thing anyone does by hand.</p>
+<pre>curl -fsSL https://raw.githubusercontent.com/vshulcz/deja-vu/main/install.sh | sh
+deja install --auto</pre>
+<p><a href="https://github.com/vshulcz/deja-vu">deja</a> builds a local index over those transcripts — every agent on the machine, including the sessions from before it was installed — and answers from them in milliseconds. Indexing a few gigabytes takes about ten seconds. Without semantic search from <code>deja embed</code>, indexing and search make no network calls, and credentials are stripped as the index is built (<a href="privacy.html">privacy</a>). On the machine measured above the index is 204 MB against 1.6 GB of transcripts; <a href="token-cost.html">what memory costs</a> has the token side of it.</p>
+
+<p>Wiring it into the agent you use is one command each: <a href="memory-for-claude-code.html">Claude Code</a>, <a href="memory-for-codex.html">Codex</a>, <a href="memory-for-cursor.html">Cursor</a>, <a href="harnesses.html">and the rest</a>.</p>
+<p><a href="does-my-agent-remember.html">Does your agent remember previous conversations?</a> · <a href="find-a-session.html">Finding a session</a> · <a href="getting-started.html">Getting started</a></p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

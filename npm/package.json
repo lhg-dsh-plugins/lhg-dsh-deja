@@ -1,0 +1,54 @@
+{
+  "name": "@vshulcz/deja-vu",
+  "version": "0.0.0",
+  "description": "deja-vu: memory for coding agents from the sessions they already wrote to disk — Claude Code, Codex, Cursor and the rest — local, from the CLI or over MCP.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vshulcz/deja-vu.git"
+  },
+  "homepage": "https://vshulcz.github.io/deja-vu/",
+  "bugs": {
+    "url": "https://github.com/vshulcz/deja-vu/issues"
+  },
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "codex",
+    "opencode",
+    "memory",
+    "agent",
+    "cli",
+    "copilot",
+    "agent-memory",
+    "ai-memory",
+    "coding-agent",
+    "claude-code-memory",
+    "cursor",
+    "gemini-cli",
+    "mcp-server",
+    "session-history",
+    "session-search",
+    "recall",
+    "local-first"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "deja": "bin/deja"
+  },
+  "files": [
+    "bin/deja",
+    "package.json"
+  ],
+  "optionalDependencies": {
+    "@vshulcz/deja-vu-darwin-arm64": "0.0.0",
+    "@vshulcz/deja-vu-darwin-amd64": "0.0.0",
+    "@vshulcz/deja-vu-linux-arm64": "0.0.0",
+    "@vshulcz/deja-vu-linux-amd64": "0.0.0",
+    "@vshulcz/deja-vu-windows-arm64": "0.0.0",
+    "@vshulcz/deja-vu-windows-amd64": "0.0.0"
+  },
+  "mcpName": "io.github.vshulcz/deja-vu"
+}

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install deja and index your agent history — deja-vu</title>
+<meta name="description" content="Install deja and index your coding-agent history in one command, then search it and wire it into your agents over MCP.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/getting-started.html">
+<link rel="alternate" hreflang="en" href="https://vshulcz.github.io/deja-vu/guide/getting-started.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://vshulcz.github.io/deja-vu/zh/guide/getting-started.html">
+<link rel="alternate" hreflang="x-default" href="https://vshulcz.github.io/deja-vu/guide/getting-started.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Install deja and index your agent history">
+<meta property="og:description" content="Install deja and index your coding-agent history in one command, then search it and wire it into your agents over MCP.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/getting-started.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="Install deja and index your agent history">
+<meta name="twitter:description" content="Install deja and index your coding-agent history in one command, then search it and wire it into your agents over MCP.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Getting started", "description": "Install deja and index your coding-agent history in one command, then search it and wire it into your agents over MCP.", "url": "https://vshulcz.github.io/deja-vu/guide/getting-started.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/getting-started.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-07-19", "dateModified": "2026-10-22"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"Getting started","item":"https://vshulcz.github.io/deja-vu/guide/getting-started.html"}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html" aria-current="page">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold"><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>Getting started</h1>
+<p class="pagelede">install it, wire it in, ask your first question<span class="mins" data-mins></span></p>
+<p>deja is a single zero-dependency binary. It reads the session logs your coding agents already write, builds a local search index, and serves that memory back to the agents over MCP. Indexing and search have no network path unless you set up semantic search: after <code>deja embed</code>, each search also sends the query to the embedding endpoint. Otherwise what reaches the network is a command you run — <code>deja update</code>, <code>deja sync ssh</code>, the <code>doctor</code> version check and <code>deja embed</code> — plus a once-a-day look at the latest release number from a command typed at a terminal, which <code>DEJA_NO_UPDATE_NOTICE=1</code> turns off. <a href="privacy.html">Privacy</a> covers each one.</p>
+<div class="term-shot"><img src="../assets/demo.gif" alt="deja demo: one question put to the same agent twice — without memory it has no record, with deja it answers with the decision from eight months earlier" loading="lazy"><p class="cap">the same question, the same agent, once without memory and once with deja — two genuine runs against a synthetic corpus, so nobody's history is in the frame</p></div>
+<h2>Install</h2>
+<pre>curl -fsSL https://raw.githubusercontent.com/vshulcz/deja-vu/main/install.sh | sh
+# or
+brew install deja-vu
+npm  install -g @vshulcz/deja-vu
+go   install github.com/vshulcz/deja-vu/cmd/deja@latest</pre>
+<p>The script puts the binary in <code>~/.local/bin</code>. If that directory is not on your <code>PATH</code> yet, <code>deja</code> is not found in the same shell: run the <code>next:</code> line the script prints, which has the full path, or open a new shell once the <code>PATH</code> line is added.</p>
+<p>Desktop apps that install MCP servers as bundles take the <code>.mcpb</code> file published with every release — one per platform, carrying the binary, so nothing else is needed. Open it and the app installs the server. Terminal agents use <code>deja install</code>, described under <a href="harnesses.html">harnesses</a>.</p>
+<p>On Windows the install script does not run — it is a shell script and exits with <code>unsupported OS</code>. Scoop is the short way, and it needs no bucket added first; winget, which ships with Windows, works too:</p>
+<pre>scoop install deja-vu
+winget install vshulcz.deja-vu</pre>
+<p>Otherwise take <code>deja-vu_&lt;version&gt;_windows_amd64.zip</code> from the <a href="https://github.com/vshulcz/deja-vu/releases/latest">latest release</a> and put <code>deja.exe</code> on your <code>PATH</code>, for example in <code>%USERPROFILE%\.local\bin</code>.</p>
+<div class="note">The binary on its own is a complete install for searching your history: index, search, <code>show</code>, <code>ctx</code>, <code>blame</code>, <code>--json</code> and redaction all work without it. <code>deja install</code> is what wires MCP into your agents and turns on session-start recall — useful, and optional. <code>deja doctor</code> reporting every MCP target as <code>config missing</code>, or <code>not-wired</code> where the agent is installed, is the expected state for that setup, not a fault. <code>deja warmup</code> leaves a skill at <code>~/.agents/skills/deja-search/SKILL.md</code> teaching an agent the CLI contract, so it reaches for <code>deja recall</code> on its own.</div>
+<h2>Search your history</h2>
+<p>Run <code>deja</code> on its own in a terminal. The first time, it builds the index from every agent history it finds — retroactively, including sessions from before you installed it — behind a progress view that names each agent as it is read, and lets you in once the newest sessions are searchable. Then it opens a search screen: the sessions behind your uncommitted change first, then recent ones in this project. <code>deja install</code> builds the index too while wiring your agents, so the first agent turn does not pay for the build.</p>
+<div class="term-shot"><img src="../assets/tui.gif" width="720" height="442" alt="the deja screen: a search typed into the box narrows the session list as you type, the matching session is opened and read at the match, then continued in another agent" loading="lazy"><p class="cap">bare <code>deja</code>: type, read, continue somewhere else</p></div>
+<p>Type and the list updates as you type. <code>↵</code> reads a session at the match, <code>r</code> resumes it in the agent that wrote it, <code>o</code> continues it in any other agent, and <code>?</code> lists the rest of the keys (<a href="commands.html#the-screen">all of them</a>). <code>q</code> leaves from the list (in the search box it is a letter), and <code>esc</code> steps back until it leaves from an empty box. The same search works as a plain command, for scripts and pipes:</p>
+<pre>deja "connection pool exhausted"
+deja "have we dealt with jwt refresh rotation before"</pre>
+<p><code>deja brief</code> prints a text summary of recent sessions instead of the screen, and <code>DEJA_TUI=0</code> makes bare <code>deja</code> do the same.</p>
+<div class="note">No <code>deja index</code> step is required — any search, recall, or install builds and refreshes the index as needed. Pass <code>--no-index</code> to <code>deja install</code> if you are scripting an install and want to defer the build. If you do keep the index warm from a shell profile or a cron entry, <code>deja index --quiet</code> says nothing when it worked and still reports every failure — which <code>deja index &gt;/dev/null</code> does not. Exit status 3 means the index was written but some paths or lines were not read; <code>deja doctor</code> names them.</div>
+<h2>Wire it into your agents</h2>
+<pre>deja install --all      # MCP recall for every agent found on this machine
+deja install --auto     # same, plus session-start auto-recall where supported</pre>
+<p>These harnesses can pull deja straight from their own plugin registry instead — same wiring, no local step:</p>
+<pre>claude plugin marketplace add vshulcz/deja-vu &amp;&amp; claude plugin install deja-vu@deja-vu
+codex  plugin marketplace add https://github.com/vshulcz/deja-vu &amp;&amp; codex plugin add deja-vu@deja-vu
+cursor-agent plugin marketplace add https://github.com/vshulcz/deja-vu
+qwen   extensions install https://github.com/vshulcz/deja-vu
+openclaw plugins install ./deja-vu/claude-plugin
+copilot plugin marketplace add vshulcz/deja-vu &amp;&amp; copilot plugin install deja-vu@deja-vu</pre>
+<div class="note">Cursor, Qwen and OpenClaw read the Claude plugin format directly, so all of them install from the one bundle in this repository, which carries the hooks, the <code>/deja</code> command and the MCP server. OpenClaw runs hooks only from its own packs — <code>deja install openclaw-auto</code> writes one. Copilot CLI installs the same bundle and takes only the skill from it: no hook runs and no MCP server is configured, so on Copilot use <code>deja install copilot-auto</code>, which writes both. The plugin stands down if <code>deja install</code> already wired the same hooks, so having both does not recall twice.</div>
+<p>These keep their extensions in an ecosystem of their own:</p>
+<pre>opencode plugin opencode-deja
+dsh plugin --profile web add dsh-deja
+openclaw plugins install clawhub:@vshulcz/openclaw-deja &amp;&amp; openclaw config set plugins.entries.deja-vu.hooks.allowConversationAccess true
+pi install npm:@vshulcz/pi-deja
+hermes plugins install vshulcz/deja-vu/extensions/hermes
+grok plugin marketplace add vshulcz/deja-vu
+grok plugin install deja
+/plugins install https://github.com/vshulcz/deja-vu   # inside Kimi Code
+# Zed → Extensions → deja</pre>
+<div class="note">Either path is enough — <code>deja install --auto</code> wires these as well. The opencode and dsh packages read what the installer wrote and contribute only what is missing, and in Zed both halves register under one server id, so having both never means two servers or a tool listed twice.</div>
+<p>In a <a href="https://github.com/github/spec-kit">Spec Kit</a> project, an extension adds <code>/speckit.deja-vu.recall</code>, which searches past sessions for the feature before you implement it:</p>
+<pre>specify extension add deja-vu --from https://github.com/vshulcz/deja-vu/releases/latest/download/deja-spec-kit.zip</pre>
+<p>After that, an agent can call <code>recall</code> the moment you reference past work — see <a href="agents.html">Agents &amp; MCP</a>. Confirm the wiring any time with <code>deja doctor</code>.</p>
+<h2>Optional: semantic recall</h2>
+<p>If you run a local embedding endpoint (Ollama, LM Studio), <code>deja embed</code> adds a vector sidecar so rephrased queries still match. Without one, deja works exactly as before. See <a href="search.html">Search</a>.</p>
+
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

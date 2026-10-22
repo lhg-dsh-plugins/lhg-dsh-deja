@@ -1,0 +1,149 @@
+import { readFileSync } from "node:fs"
+import { test } from "node:test"
+import assert from "node:assert/strict"
+import { accessNote, argv, configPath, contributions, installerPluginPath, mcpWired, promptText, recallArgv, recallSilence, toolCall, where } from "../lib.mjs"
+
+test("a missing conversation-access grant is named with the command that sets it", () => {
+  const granted = { plugins: { entries: { "deja-vu": { hooks: { allowConversationAccess: true } } } } }
+  assert.equal(accessNote(granted, "deja-vu"), "")
+  const missing = [
+    undefined,
+    {},
+    { plugins: { entries: { "deja-vu": { enabled: true } } } },
+    { plugins: { entries: { "deja-vu": { hooks: { allowConversationAccess: false } } } } },
+    // The grant is per entry: another plugin's does not count.
+    { plugins: { entries: { other: { hooks: { allowConversationAccess: true } } } } },
+  ]
+  for (const cfg of missing) {
+    assert.match(accessNote(cfg, "deja-vu"), /openclaw config set plugins\.entries\.deja-vu\.hooks\.allowConversationAccess true/)
+  }
+})
+
+test("a query that starts with a dash gets the flag terminator", () => {
+  assert.deepEqual(argv("search", ["--limit", "5"], "--json"), ["search", "--limit", "5", "--", "--json"])
+  assert.deepEqual(argv("search", ["--limit", "5"], "pgbouncer"), ["search", "--limit", "5", "pgbouncer"])
+})
+
+test("the installer's plugin and config are looked for where the installer writes them", () => {
+  assert.equal(installerPluginPath({}, "/home/u"), "/home/u/.openclaw/extensions/deja/index.mjs")
+  assert.equal(installerPluginPath({ OPENCLAW_STATE_DIR: "/srv/oc" }, "/home/u"), "/srv/oc/extensions/deja/index.mjs")
+  assert.equal(configPath({}, "/home/u"), "/home/u/.openclaw/openclaw.json")
+})
+
+test("an MCP server the installer wrote means the tools are already there", () => {
+  assert.equal(mcpWired('{"mcp":{"servers":{"deja":{"command":"deja","args":["mcp"]}}}}'), true)
+  assert.equal(mcpWired('// comment\n{"mcp":{"servers":{"other":{}}}}'), false)
+  assert.equal(mcpWired("not json"), false)
+})
+
+test("contributions fill the gaps and never repeat the installer", () => {
+  assert.deepEqual(contributions({ mcp: false, recall: false }), { tools: true, recall: true })
+  assert.deepEqual(contributions({ mcp: true, recall: true }), { tools: false, recall: false })
+  assert.deepEqual(contributions({ mcp: false, recall: false }, { autoRecall: false }), { tools: true, recall: false })
+})
+
+test("the prompt and session key are read from the shapes the host sends", () => {
+  assert.equal(promptText({ prompt: "  fix the pool  " }), "fix the pool")
+  assert.equal(promptText({ prompt: ["a", "b"] }), "a\nb")
+  assert.equal(promptText({}), "")
+})
+
+test("hooks name the transcript id and the agent's workspace, not the session key", () => {
+  // hook-context stamps the session live under the id the index knows it by;
+  // agent:main:main names no transcript (#4582).
+  const seen = new Map()
+  assert.deepEqual(where(seen, {}, { sessionKey: "agent:main:main", sessionId: "t1", workspaceDir: "/w" }, "/gw"), { id: "t1", cwd: "/w" })
+  // The run's own compaction hands over only the key: what it last ran as stands in.
+  assert.deepEqual(where(seen, {}, { sessionKey: "agent:main:main" }, "/gw"), { id: "t1", cwd: "/w" })
+  assert.deepEqual(where(new Map(), { sessionId: "e1" }, {}, "/gw"), { id: "e1", cwd: "/gw" })
+  assert.deepEqual(where(new Map(), {}, { sessionKey: "k" }, "/gw"), { id: "k", cwd: "/gw" })
+})
+
+test("the package wires every seam the installer's plugin does", async () => {
+  const { default: plugin } = await import("../index.mjs")
+  const events = []
+  const prev = process.env.OPENCLAW_STATE_DIR
+  process.env.OPENCLAW_STATE_DIR = "/nonexistent-openclaw-state"
+  try {
+    const api = { pluginConfig: { tools: false, bin: "/nonexistent/deja" }, on: (name) => events.push(name), registerTool() {} }
+    plugin.register(api)
+    plugin.register({ ...api, registerHook: (name) => events.push("hook " + name) })
+    plugin.register({ ...api, config: { hooks: { internal: { enabled: false } } }, registerHook: (name) => events.push("hook " + name) })
+  } finally {
+    if (prev === undefined) delete process.env.OPENCLAW_STATE_DIR
+    else process.env.OPENCLAW_STATE_DIR = prev
+  }
+  const seams = ["before_prompt_build", "reply_payload_sending", "before_compaction", "session_end"]
+  // The digest rides agent:bootstrap where plugin hooks run, and the first
+  // prompt otherwise.
+  assert.deepEqual(events, [
+    "before_dispatch", "agent_turn_prepare", ...seams,
+    "before_dispatch", "hook agent:bootstrap", ...seams,
+    "before_dispatch", "agent_turn_prepare", ...seams,
+  ])
+})
+
+test("a finished tool maps to the call the installer's plugin makes", () => {
+  const at = { id: "S1", cwd: "/w" }
+  assert.deepEqual(toolCall({ toolName: "read", args: { path: "a.go" } }, at), {
+    args: ["hook-tool", "--plain"],
+    payload: { tool_name: "read", tool_input: { file_path: "a.go" }, session_id: "S1", cwd: "/w" },
+  })
+  assert.equal(toolCall({ toolName: "write", args: { file_path: "b.go" } }, at).payload.tool_name, "edit")
+  const failed = toolCall({ toolName: "exec", args: { command: "make" }, result: { content: [{ type: "text", text: "boom" }] } }, at)
+  assert.deepEqual(failed.args, ["hook-tool-after", "--plain"])
+  assert.equal(failed.payload.tool_response, "boom")
+  assert.equal(toolCall({ toolName: "exec", args: { command: "make" }, result: { content: [] } }, at), null)
+  assert.equal(toolCall({ toolName: "web_search", args: {} }, at), null)
+})
+
+// What a tool returns goes to the model, and search, ctx, blame, fix and how
+// print for a person: no frame, and a tag planted in a transcript went through
+// as though deja had closed its own block (#5051). Every call inside a tool
+// asks for --framed output; the /deja command answers the person and stays
+// plain. deja_recall asks for the recall page, which deja frames itself.
+test("every agent tool asks deja for framed output", () => {
+  const SRC = readFileSync(new URL("../index.mjs", import.meta.url), "utf8")
+  let tools = 0
+  for (const m of SRC.matchAll(/argv\("(search|ctx|blame|fix|how|show)"/g)) {
+    const before = SRC.slice(0, m.index)
+    if (before.lastIndexOf("execute(") < before.lastIndexOf("handler(")) continue
+    tools++
+    assert.ok(before.endsWith('"--framed", ...'), `${SRC.slice(m.index, m.index + 40)} in a tool is not framed`)
+  }
+  assert.ok(tools >= 2, `found ${tools} tool calls, so this proves nothing`)
+})
+
+// deja_recall ran `--framed search`, whose page grows with the hits: 21,137
+// characters for twenty on a synthetic store, where the MCP recall tool
+// answers in 4,096 (#5568). The tool now asks for that page, and pages with
+// --offset.
+test("deja_recall asks for the recall page, not search", () => {
+  const SRC = readFileSync(new URL("../index.mjs", import.meta.url), "utf8")
+  const start = SRC.indexOf('name: "deja_recall"')
+  const tool = SRC.slice(start, SRC.indexOf('name: "deja_fix"', start))
+  assert.ok(start >= 0 && tool.length > 0, "deja_recall is not where this test looks")
+  assert.match(tool, /recallArgv\((args|params)\)/)
+  assert.doesNotMatch(tool, /"search"|--json/)
+  const schema = SRC.slice(SRC.indexOf("const RECALL_SCHEMA"), SRC.indexOf("const FIX_SCHEMA"))
+  assert.match(schema, /offset/, "the tool takes no offset, so the page's paging line points at nothing")
+})
+
+test("recallArgv asks for one page, from the offset given", () => {
+  assert.deepEqual(recallArgv({ query: "pgbouncer" }), ["recall", "--limit", "5", "pgbouncer"])
+  assert.deepEqual(recallArgv({ query: "pgbouncer", limit: 500, offset: 0 }), ["recall", "--limit", "20", "pgbouncer"])
+  assert.deepEqual(recallArgv({ query: "pgbouncer", limit: "3", offset: 6.7 }), [
+    "recall", "--limit", "3", "--offset", "6", "pgbouncer",
+  ])
+  // Junk and negatives fall back to the first page; a dash query still gets
+  // the terminator after the flags.
+  assert.deepEqual(recallArgv({ query: "--json", offset: -2 }), ["recall", "--limit", "5", "--", "--json"])
+  assert.deepEqual(recallArgv({ query: "x", offset: "two" }), ["recall", "--limit", "5", "x"])
+})
+
+test("silence past the first page is an old deja, not an empty history", () => {
+  assert.match(recallSilence(recallArgv({ query: "x", offset: 5 })), /deja update/)
+  assert.equal(recallSilence(recallArgv({ query: "x" })), "Nothing in this machine's history matches that.")
+  // An offset JavaScript would print as 1e+21 is one deja cannot parse.
+  assert.deepEqual(recallArgv({ query: "x", offset: 1e21 }), ["recall", "--limit", "5", "--offset", "1000000000", "x"])
+})

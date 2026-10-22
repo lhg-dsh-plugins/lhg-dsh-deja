@@ -1,0 +1,467 @@
+package main
+
+import (
+	"path/filepath"
+	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/model"
+	"github.com/vshulcz/deja-vu/internal/termwidth"
+	"github.com/vshulcz/deja-vu/internal/tui"
+)
+
+// A card leads with what was asked, because that is what a person remembers
+// a session by; many sessions conclude in near-identical words. What it
+// concluded goes on a dim line under it. A session with no question recorded
+// leads with its conclusion instead.
+func (a *tuiApp) headline(s model.Session) string {
+	if t := strings.Join(strings.Fields(s.Title), " "); t != "" {
+		return t
+	}
+	if c, _ := a.conclusion(s); c != "" {
+		return c
+	}
+	return "(no prompt recorded)"
+}
+
+// conclusion is the session's first concluding line, and whether the session
+// has been read whole yet to know it.
+func (a *tuiApp) conclusion(s model.Session) (string, bool) {
+	d := a.details[sessionKey(s)]
+	if d == nil {
+		return "", false
+	}
+	if len(d.conclusions) == 0 {
+		return "", true
+	}
+	return d.conclusions[0], true
+}
+
+func (a *tuiApp) sectionLabel() (string, string) {
+	if len(a.query) > 0 {
+		agents := map[string]bool{}
+		for _, r := range a.rows {
+			agents[r.s.Harness] = true
+		}
+		n, more := a.listedCount()
+		label := tuiCount(n, "session") + " across " + tuiCount(len(agents), "agent")
+		if more {
+			label = grouped(n) + "+ sessions across " + tuiCount(len(agents), "agent")
+		}
+		box := a.box()
+		note := "all projects"
+		switch {
+		case a.widened:
+			note = "none in this project, showing all"
+		case len(box.projects) > 0:
+			note = "" // the filter names the project
+		case a.scope == scopeHere:
+			note = "this project"
+		case a.scope == scopeKept:
+			note = "deleted by their agent"
+		}
+		if f := box.note(); f != "" && note != "" {
+			note += " · " + f
+		} else if f != "" {
+			note = f
+		}
+		// The order is always named: at 80 columns the footer has no room
+		// for the ^s that changes it. It is the order of the cards listed,
+		// which a toggle changes only once its search is back.
+		if a.rowsByDate {
+			note += " · newest first"
+		} else {
+			note += " · best first"
+		}
+		return label, strings.TrimPrefix(note, " · ")
+	}
+	switch a.scope {
+	case scopeHere:
+		return "Recent in this project", grouped(a.total)
+	case scopeKept:
+		return "Deleted by their agent, kept by deja", grouped(a.total)
+	}
+	return "Recent", grouped(a.total)
+}
+
+// sortHint is what ^s turns the search list to.
+func (a *tuiApp) sortHint() string {
+	if a.byDate {
+		return "best first"
+	}
+	return "newest first"
+}
+
+// listedCount is the count a search list is headed with: every session that
+// matched while the list reads a page at a time, or the cards themselves when
+// a filter the index cannot apply stands between the two; more is set when
+// that is a lower bound.
+func (a *tuiApp) listedCount() (n int, more bool) {
+	if !a.moreLeft() {
+		return len(a.rows), false
+	}
+	box := a.box()
+	if len(a.filter) > 0 || a.scope == scopeKept || len(box.harnesses) > 1 || !box.until.IsZero() {
+		return len(a.rows), true
+	}
+	return a.matched, false
+}
+
+func tuiCount(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return grouped(n) + " " + word + "s"
+}
+
+// snippet is the matched line a card quotes: the first that does not repeat
+// its headline. With none, the card shows the conclusion instead.
+func (a *tuiApp) snippet(r tuiRow) string {
+	head := a.headline(r.s)
+	for _, sn := range r.snips {
+		if !sameLine(sn, head) {
+			return sn
+		}
+	}
+	return ""
+}
+
+// cardHeight is a card's rows plus the gap after it. Every card keeps its
+// third row even while it is empty, so cards do not jump as their sessions
+// finish loading.
+func (a *tuiApp) cardHeight(r tuiRow) int {
+	h := 4
+	if r.section != "" {
+		h += 2
+	}
+	return h
+}
+
+// groupHeading draws the heading a card starts its group with, and the count
+// beside it.
+func (a *tuiApp) groupHeading(l layout, i int, r tuiRow, y int) {
+	p := a.p
+	x1 := l.listX + l.listW
+	nx := p.Put(l.listX+1, y, strings.ToUpper(r.section), fgs(cMuted), x1)
+	note := ""
+	if r.file != "" {
+		n := 0
+		for _, b := range a.rows {
+			if b.file != "" {
+				n++
+			}
+		}
+		note = tuiCount(n, "session")
+	} else {
+		// A date group counts its cards. The last one is only as long as
+		// the list was cut, so it names nothing it cannot count.
+		n, end := 0, len(a.rows)
+		for j := i; j < len(a.rows); j++ {
+			if j > i && a.rows[j].section != "" {
+				end = j
+				break
+			}
+			n++
+		}
+		if end < len(a.rows) || len(a.rows) >= a.total && !a.moreLeft() {
+			note = grouped(n)
+		}
+	}
+	p.PutClip(nx+2, y, note, fgs(cFaint), x1)
+}
+
+func (a *tuiApp) drawCards(l layout) {
+	p := a.p
+	top := l.bodyTop
+	if n, s := dejaVu(a.box().text, a.rows); n > 0 && l.bodyH > 16 {
+		a.drawDejaVu(l, n, s)
+		top += 4
+	}
+	// A list made of groups draws each heading with its group, so the
+	// headings scroll with the cards; a single list keeps one fixed label,
+	// and so does a search read by date, whose label says how many matched
+	// and in what order.
+	if a.rows[0].section == "" || a.searchRows {
+		label, note := a.sectionLabel()
+		nx := p.Put(l.listX+1, top, strings.ToUpper(label), fgs(cMuted), l.listX+l.listW)
+		p.PutClip(nx+2, top, note, fgs(cFaint), l.listX+l.listW)
+		top += 2
+	}
+	height := l.bodyTop + l.bodyH - top
+	// Scroll so the selected card is whole on screen.
+	y0 := 0
+	selY, selH := 0, 0
+	for i, r := range a.rows {
+		if i == a.sel {
+			selY, selH = y0, a.cardHeight(r)-1
+		}
+		y0 += a.cardHeight(r)
+	}
+	if selY < a.scroll {
+		a.scroll = selY
+	}
+	if selY+selH > a.scroll+height {
+		a.scroll = selY + selH - height
+	}
+	y := top - a.scroll
+	a.firstShown = -1
+	for i, r := range a.rows {
+		h := a.cardHeight(r)
+		if y+h > top && y < top+height {
+			if a.firstShown < 0 && y >= top {
+				a.firstShown = i
+			}
+			a.drawCard(l, i, r, y, top, top+height)
+			idx := i
+			a.addZone(l.listX, max(y, top), l.listX+l.listW, min(y+h-1, top+height), func() { a.clickCard(idx) })
+			a.want(r.s)
+		}
+		y += h
+	}
+	a.firstShown = max(a.firstShown, 0)
+}
+
+// drawDejaVu is the banner over a search that was asked before: how many
+// sessions opened with this question, and what the newest one concluded.
+func (a *tuiApp) drawDejaVu(l layout, n int, s model.Session) {
+	p := a.p
+	x0, x1 := l.listX+1, l.listX+l.listW
+	y := l.bodyTop
+	p.Fill(x0, y, x1-x0, 3, cSurf2)
+	x := p.Put(x0+1, y, "✦", fgs(cMark), x1)
+	x = p.Put(x+1, y, "Déjà vu.", bold(cText), x1)
+	p.PutClip(x+1, y, "Asked in "+num(n)+" sessions before. Newest answer, "+tuiAgo(s.Updated, a.now)+":", fgs(cSub), x1-1)
+	head, read := a.conclusion(s)
+	switch {
+	case !read:
+		head = "reading…"
+	case head == "":
+		head = a.headline(s)
+	}
+	p.PutClip(x0+3, y+1, head, bold(cText), x1-1)
+	bx := p.Put(x0+3, y+2, "↵", bold(cAcc), x1)
+	bx = p.Put(bx+1, y+2, "open it   ", fgs(cSub), x1)
+	bx = p.Put(bx, y+2, "o", bold(cAcc), x1)
+	p.Put(bx+1, y+2, "hand it to an agent", fgs(cSub), x1)
+	a.want(s)
+}
+
+func (a *tuiApp) drawCard(l layout, i int, r tuiRow, y, minY, maxY int) {
+	p := a.p
+	sel := i == a.sel
+	x0, x1 := l.listX, l.listX+l.listW
+	surf := cBase
+	if sel {
+		surf = cSurf
+	}
+	lines := a.cardHeight(r) - 1
+	if r.section != "" {
+		if y >= minY && y < maxY {
+			a.groupHeading(l, i, r, y)
+		}
+		y += 2
+		lines -= 2
+	}
+	for k := 0; k < lines; k++ {
+		yy := y + k
+		if yy < minY || yy >= maxY {
+			continue
+		}
+		p.Fill(x0+1, yy, l.listW-1, 1, surf)
+		if sel {
+			p.Put(x0, yy, "▌", fgs(agentColor(r.s.Harness)), x1)
+			if p.mono {
+				p.Put(x0, yy, ">", bold(cText), x1)
+			}
+		}
+	}
+	row := func(k int) (int, bool) { yy := y + k; return yy, yy >= minY && yy < maxY }
+	head := a.headline(r.s)
+	if yy, ok := row(0); ok {
+		// The query's words are lit here as on the line under it, but the
+		// headline is cut rather than slid to its first match: a card is
+		// known by how its question starts.
+		shown := head
+		if room := x1 - 1 - (x0 + 2); termwidth.Columns(shown) > room {
+			shown = strings.TrimRight(termwidth.Cut(shown, room-1), " ") + "…"
+		}
+		p.putHL(x0+2, yy, shown, queryTerms(a.box().text), boldOn(cText, surf), x1-1)
+	}
+	if yy, ok := row(1); ok {
+		x := p.Put(x0+2, yy, "●", fgs(agentColor(r.s.Harness)), x1)
+		meta := agentName(r.s.Harness)
+		if a.scope != scopeHere || a.widened || len(a.box().projects) > 0 {
+			meta += " · " + tuiProject(r.s)
+		}
+		meta += " · " + tuiAgo(r.s.Updated, a.now)
+		// The selected card's line comes up a step with its surface.
+		mc := cMuted
+		if sel {
+			mc = cSub
+		}
+		x = p.PutClip(x+1, yy, meta, fgs(mc), x1-1)
+		// Deleted is said on this line rather than as a mark before the
+		// headline, which pushed that one headline off the column the others
+		// start on. The Deleted tab is all of them, and its heading says so.
+		if a.keptIDs[sessionKey(r.s)] && a.scope != scopeKept {
+			x = p.PutClip(x, yy, " · deleted", fgs(cPeach), x1-1)
+		}
+		if r.file != "" {
+			x = p.Put(x, yy, " · touched ", fgs(cMuted), x1-1)
+			p.PutClip(x, yy, filepath.ToSlash(r.file), fgs(cPeach), x1-1)
+		}
+	}
+	// The third row is the matched line in a search, and what the session
+	// concluded otherwise or when no match says more than the headline.
+	if yy, ok := row(2); ok {
+		if sn := a.snippet(r); sn != "" {
+			x := p.Put(x0+4, yy, "“", fgs(cMuted), x1)
+			x = p.putHL(x, yy, sn, queryTerms(a.box().text), on(cSub, surf), x1-2)
+			p.Put(x, yy, "”", fgs(cMuted), x1)
+		} else if c, _ := a.conclusion(r.s); c != "" && !sameLine(c, head) {
+			p.PutClip(x0+4, yy, c, on(cSub, surf), x1-1)
+		}
+	}
+}
+
+// tuiProject trims the path a project name sometimes is to its last two
+// parts, which is how people name their repositories.
+func tuiProject(s model.Session) string {
+	p := displayProject(s)
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) > 2 {
+		parts = parts[len(parts)-2:]
+	}
+	return strings.Join(parts, "/")
+}
+
+func (a *tuiApp) drawPreview(l layout) {
+	s, ok := a.selected()
+	if !ok {
+		return
+	}
+	p := a.p
+	x, y, w, h := l.prevX, l.bodyTop, l.prevW, l.bodyH
+	p.box(x, y, w, h, cSurf)
+	ix, iw := x+2, w-4
+	right := ix + iw
+	d := a.details[sessionKey(s)]
+	r := a.rows[a.sel]
+	cy := y + 1
+	cx := p.Put(ix, cy, "●", fgs(agentColor(s.Harness)), right)
+	cx = p.Put(cx+1, cy, agentName(s.Harness), bold(cText), right)
+	p.PutClip(cx+2, cy, tuiProject(s)+" · "+tuiAgo(s.Updated, a.now), fgs(cMuted), right)
+	cy += 2
+	bottom := y + h - 3 // the buttons' row
+	room := func(n int) bool { return cy+n < bottom-1 }
+	gone := d != nil && d.gone
+	if gone && room(3) {
+		p.Put(ix, cy, "◆ Deleted by "+agentName(s.Harness), bold(cPeach), right)
+		cy++
+		for _, ln := range wrapLines("deja kept a copy. R writes it back where "+agentName(s.Harness)+" reads it.", iw, 2) {
+			p.Put(ix, cy, ln, fgs(cSub), right)
+			cy++
+		}
+		cy++
+	}
+	section := func(label string, lines []string, st func(int, string)) {
+		if len(lines) == 0 || !room(2) {
+			return
+		}
+		p.Put(ix, cy, label, fgs(cMuted), right)
+		cy++
+		for i, ln := range lines {
+			if !room(1) {
+				break
+			}
+			st(i, ln)
+			cy++
+		}
+		cy++
+	}
+	plain := func(c tui.Color) func(int, string) {
+		return func(_ int, ln string) { p.Put(ix, cy, ln, fgs(c), right) }
+	}
+	terms := queryTerms(a.box().text)
+	section("ASKED", wrapLines(s.Title, iw, 3), func(_ int, ln string) {
+		p.putHL(ix, cy, ln, terms, fgs(cText), right)
+	})
+	if len(r.snips) > 0 {
+		section("MATCHED", wrapLines(r.snips[0], iw-2, 3), func(_ int, ln string) {
+			p.putHL(ix, cy, ln, terms, fgs(cSub), right)
+		})
+	}
+	switch {
+	case d == nil:
+		if room(4) {
+			p.Put(ix, cy, "CONCLUDED", fgs(cMuted), right)
+			a.drawSkeleton(ix, cy+1, iw-2, 3)
+			cy += 5
+		}
+	case len(d.conclusions) == 0:
+		section("CONCLUDED", []string{"Nothing the session settled on."}, plain(cFaint))
+	default:
+		var lines []string
+		for _, c := range d.conclusions {
+			lines = append(lines, wrapLines(c, iw-2, 3)...)
+		}
+		if len(lines) > 6 {
+			lines = lines[:6]
+		}
+		section("CONCLUDED", lines, func(i int, ln string) {
+			p.Put(ix, cy, "▎", fgs(cAcc), right)
+			st := fgs(cText)
+			st.Bold = i < 3
+			p.Put(ix+2, cy, ln, st, right)
+		})
+	}
+	// The edited list below says it better once the session is read.
+	if len(s.Touched) > 0 && (d == nil || len(d.story.edited) == 0) && room(1) {
+		lx := p.Put(ix, cy, "TOUCHED", fgs(cMuted), right)
+		p.Put(lx+2, cy, termwidth.CutRight(s.Touched[0], right-lx-2), fgs(cText), right)
+		cy++
+	}
+	if room(1) {
+		size := ""
+		if d != nil {
+			size = tuiCount(len(d.full.Messages), "message")
+		}
+		if s.Words > 0 {
+			if size != "" {
+				size += " · "
+			}
+			size += tuiCount(s.Words, "word")
+		}
+		if size != "" {
+			lx := p.Put(ix, cy, "SIZE", fgs(cMuted), right)
+			p.Put(lx+2, cy, size, fgs(cSub), right)
+			cy++
+		}
+	}
+	if d != nil {
+		shown := append(append([]string{s.Title}, r.snips[:min(1, len(r.snips))]...), d.conclusions...)
+		a.drawStory(ix, cy+1, right, bottom-1, d.story, shown)
+	}
+	a.drawActions(ix, bottom, right, gone)
+}
+
+// drawActions is the button row: one filled primary, the rest quiet.
+func (a *tuiApp) drawActions(x, y, right int, gone bool) {
+	p := a.p
+	type act struct {
+		k, label string
+		do       func()
+	}
+	acts := []act{{"↵", "Read", a.openReader}, {"r", "Resume", a.resumeSelected}, {"o", "Continue in…", a.openContinue}}
+	if gone {
+		acts = []act{{"R", "Put back", a.putBack}, {"↵", "Read", a.openReader}, {"o", "Continue in…", a.openContinue}}
+	}
+	for i, ac := range acts {
+		x0 := x
+		x = p.button(x, y, ac.k, ac.label, i == 0, right)
+		a.addZone(x0, y, x, y+1, ac.do)
+		x += 2
+		if x >= right {
+			break
+		}
+	}
+}

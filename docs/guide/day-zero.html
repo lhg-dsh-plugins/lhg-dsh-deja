@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What each memory tool knows the day you install it — deja-vu</title>
+<meta name="description" content="Eight tools on a machine with 19,195 sessions already on disk, asked 100 questions only that history answers: build time, first answer, hit@1.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/day-zero.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="What each memory tool knows the day you install it">
+<meta property="og:description" content="Eight tools on a machine with 19,195 sessions already on disk, asked 100 questions only that history answers: build time, first answer, hit@1.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/day-zero.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="What each memory tool knows the day you install it">
+<meta name="twitter:description" content="Eight tools on a machine with 19,195 sessions already on disk, asked 100 questions only that history answers: build time, first answer, hit@1.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Day zero", "description": "Eight tools installed on a machine with 19,195 sessions already on disk in coding-agent file layouts, then asked 100 questions only that history can answer: build time, first answer, hit@1, install size.", "url": "https://vshulcz.github.io/deja-vu/guide/day-zero.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/day-zero.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-09-03", "dateModified": "2026-10-21"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"Day zero","item":"https://vshulcz.github.io/deja-vu/guide/day-zero.html"}]}</script>
+<style>
+/* Full-width page: the matrix needs every pixel, so the sidebar folds into a top strip. */
+/* The table takes the width the contents column would have had. Dropping the
+   sidebar was the old answer and it cost the reader their place in the guide;
+   dropping the three-item contents list on this one page costs nothing.
+
+   Removing the article's max-width alone was not enough — the grid still held
+   the middle column, so four of the columns stayed off-screen. */
+@media(min-width:861px){
+.doc{grid-template-columns:224px minmax(0,1fr)}
+.doc .toc{display:none}
+.doc article{max-width:none}
+}
+.cmpwrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--line);border-radius:10px}
+.cmpwrap table{table-layout:fixed;border-collapse:collapse;margin:0;
+  font:12.5px var(--mono);min-width:1170px;width:100%}
+.cmpwrap th,.cmpwrap td{padding:11px 13px;vertical-align:top;overflow-wrap:break-word;
+  border:1px solid var(--line);line-height:1.5}
+.cmpwrap td:first-child,.cmpwrap th:first-child{position:sticky;left:0;z-index:1;
+  background:var(--bg);width:142px;color:var(--faint);font-size:10.5px;
+  text-transform:uppercase;letter-spacing:.1em}
+.cmpwrap thead th{position:sticky;top:0;z-index:2;background:var(--panel);
+  color:var(--faint);text-transform:uppercase;font-size:10.5px;letter-spacing:.12em}
+/* the subject of the page, marked as the subject */
+.cmpwrap th.us,.cmpwrap td.us{background:rgba(135,135,175,.13);color:var(--ink)}
+.cmpwrap thead th.us{color:var(--ph-hi);box-shadow:inset 0 2px 0 var(--amber)}
+.cmpwrap tbody tr:hover td{background:rgba(255,255,255,.02)}
+.cmpwrap tbody tr:hover td.us{background:rgba(135,135,175,.18)}
+.cmpwrap .y{color:var(--ph-hi)}
+.cmpwrap .n{color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold"><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html" aria-current="page">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>Day zero</h1>
+<p class="pagelede">what each memory tool knows the minute you install it<span class="mins" data-mins></span></p>
+<p>I maintain deja-vu, which is one of the eight tools measured below. Read the rest with that in mind. The corpus, every driver and the scoring rule are in the repository, so a row you doubt can be re-run.</p>
+<p>Memory tools get measured warm. You install one, it fills up for a few weeks, and then you ask it about what it captured. Day zero is the other case. The laptop already holds months of Claude Code, Codex and Cursor sessions, and the tool went on five minutes ago. Can it answer from what is already on disk, and how long before it can? And what did installing it cost, counting the processes it leaves running and the tokens it spends on every turn before you have asked anything?</p>
+<p>Two answers surprised me. The vector index with a reranker, built by Hugging Face, spends 31 minutes embedding this history and then ranks below plain BM25 at every depth. And the cost nobody puts in a README: a wired-in MCP server spends between 477 and 8,283 tokens of your context on tool definitions every single turn, whether the agent calls it or not.</p>
+<p>There is a second measurement further down, on one real task in a real repository rather than on questions: the same job cost 53,558 tokens with deja wired in and 126,222 with no memory at all, and 52,815 against 103,443 when it was run again on a later build.</p>
+
+<h2>The setup</h2>
+<p>19,195 sessions from the LongMemEval-S cleaned set go on disk first, in the layouts the tools actually read: <code>~/.claude/projects/&lt;project&gt;/&lt;id&gt;.jsonl</code> and <code>~/.codex/sessions/&lt;date&gt;/rollout-&lt;id&gt;.jsonl</code>. Nothing is installed until they are there.</p>
+<p>The obvious objection first: those are not coding sessions. LongMemEval's conversations are personal-assistant chat about travel plans and purchases. I used them anyway because the benchmark guarantees something a real laptop cannot, which is that each of the 100 questions has exactly one session holding its answer. Without that there is no ground truth to score against. The file layouts are real, the volume is realistic, and the retrieval problem is the same shape. The content is not, and that is the one thing you should discount.</p>
+<p>A tool scores at rank <em>k</em> when the session holding the answer comes back <em>k</em>-th. hit@1 counts rank 0, hit@5 counts anything under 5, found@50 counts anything in the first fifty. The control points deja at an empty directory and scores 0 of 100, which is what any memory that only records forward sees on day zero.</p>
+<p>Expect low absolute numbers. These are LongMemEval questions asked against nineteen thousand sessions instead of the fifty or so the benchmark ships per question. On that standard setup deja's hit@1 is 88.1%, and the <a href="benchmarks.html">benchmarks page</a> runs it. The haystack here is roughly four hundred times bigger. A third of the questions are the kinds any lexical index is bad at, like stated preferences and facts assembled from several sessions. Nobody looks good here. The interesting part is the gaps between the rows and what each row cost to produce.</p>
+<p>Each tool runs with its defaults and its documented way of reading existing history: <code>deja index</code>, <code>cass index --full</code>, <code>agentsview sync</code>, <code>agentmemory import-jsonl</code>, <code>mempalace mine --mode convos</code>. Latency is the wall time of one search call from a warm process; <em>first</em> is the very first call after the build. claude-mem has no row: it captures at session end through hooks and needs an AI provider to write memory, so on day zero it has nothing to answer from.</p>
+
+<div class="cmpwrap">
+<table>
+<tr><th></th><th class="us">deja-vu</th><th><a href="https://github.com/huggingface/funes" rel="noopener">funes</a></th><th><a href="https://github.com/ctxrs/ctx" rel="noopener">ctx</a></th><th><a href="https://github.com/Dicklesworthstone/coding_agent_session_search" rel="noopener">CASS</a></th><th><a href="https://github.com/kenn-io/agentsview" rel="noopener">agentsview</a></th><th><a href="https://github.com/rohitg00/agentmemory" rel="noopener">agentmemory</a></th><th><a href="https://github.com/MemPalace/mempalace" rel="noopener">MemPalace</a></th><th><a href="https://github.com/thedotmack/claude-mem" rel="noopener">claude-mem</a></th></tr>
+<tr><td>Reads the history already on disk</td><td class="us y">✓ 42 agents, no capture step</td><td class="y">✓ 4 harnesses</td><td class="y">✓ 39 providers</td><td class="y">✓ 25+ agents</td><td class="y">✓ 62 agents</td><td class="y">✓ Claude Code JSONL import, ≤1000 files per call</td><td class="y">✓ <code>mine</code> per file tree</td><td class="n">— records from install on</td></tr>
+<tr><td>Install</td><td class="us y">18.6 MB binary</td><td>172 MB binary + 1.2 GB of models on first use</td><td>43 MB binary</td><td>58.5 MB binary</td><td>115 MB binary</td><td>689 MB npm + 28 MB engine</td><td>312 MB + 168 MB embedding model</td><td>npm + Claude Code plugin</td></tr>
+<tr><td>Runs in the background</td><td class="us y">nothing</td><td class="y">nothing</td><td>daemon</td><td class="y">nothing</td><td>daemon, for search</td><td>worker + engine, four ports</td><td>Chroma</td><td>worker</td></tr>
+<tr><td>Needs a model or key</td><td class="us y">no</td><td>local embeddings + reranker</td><td class="y">no by default; optional local semantic model</td><td class="y">no</td><td class="y">no; optional embeddings endpoint</td><td>keyless mode: BM25 only</td><td>local embeddings</td><td>yes</td></tr>
+<tr><td>Tool definitions in context, every turn</td><td class="us y">477 tokens, 1 tool</td><td>2,289, 6 tools</td><td>1,897, 6 tools</td><td class="y">none — CLI, no MCP server ‖</td><td>8,283, 7 tools</td><td>745, 7 tools</td><td>8,183, 45 tools</td><td>2,307, 15 tools</td></tr>
+<tr><td>Build over 19,195 sessions</td><td class="us y">17.6 s</td><td>31 min ‡</td><td>72 s §</td><td>56 min</td><td>3 min 56 s</td><td>95 s</td><td>≈3 h</td><td class="n">—</td></tr>
+<tr><td>First answer after the build</td><td class="us y">26 ms</td><td>6.4 s</td><td>1.04 s</td><td>0.38 s</td><td>1.44 s</td><td>185 ms</td><td>4.5 s</td><td class="n">—</td></tr>
+<tr><td>Search latency, p50</td><td class="us y">97 ms</td><td>8.6 s</td><td>1.03 s</td><td>0.37 s</td><td>113 ms</td><td>145 ms</td><td>2.6 s</td><td class="n">—</td></tr>
+<tr><td>hit@1 / 100</td><td class="us y">19</td><td>3 (7 with recency off)</td><td>7</td><td>5 †</td><td>7 ¶</td><td>14</td><td>14</td><td class="n">0</td></tr>
+<tr><td>hit@5 / 100</td><td class="us y">36</td><td>15 (17)</td><td>14</td><td>8 †</td><td>13 ¶</td><td>34</td><td>20</td><td class="n">0</td></tr>
+<tr><td>found@50 / 100</td><td class="us y">65</td><td>42 (42)</td><td>34</td><td>16 †</td><td>19 ¶</td><td>65</td><td>46</td><td class="n">0</td></tr>
+<tr><td>Serves the agent by itself</td><td class="us y">✓ MCP, hooks at session start and before a tool runs</td><td class="y">✓ MCP + per-turn hooks</td><td class="y">✓ MCP, integrations</td><td>robot CLI, MCP</td><td>MCP, read-only</td><td class="y">✓ MCP, hooks</td><td class="y">✓ MCP, hooks</td><td class="y">✓ hooks</td></tr>
+</table>
+</div>
+
+<p>‖ Tool definitions are sent with every request for as long as a server is wired in, so they are paid once a turn whether or not the agent calls them — the one cost on this page a user pays without asking a question. Counted with <code>scripts/day0compare/toolcost.py</code>: <code>tools/list</code> over the server's own stdio command, tiktoken <code>o200k_base</code> over the JSON of the tools array, each server given an empty home so it answers for its defaults. Measured September 24, 2026, and so on the releases current that day rather than the ones the accuracy rows were run on: deja 0.21.1 (<code>deja mcp</code>), funes 1.3.3, ctx 1.4.12, agentsview 0.44.0, agentmemory 0.9.29, MemPalace 3.9.0 and claude-mem 13.25.3. CASS 0.8.0 has no MCP server — its agent surface is the CLI, which stands in no context and is paid per call instead. The number moves with a release: deja's own was 828 until the schema was cut to one tool with modes.</p>
+<p>† CASS is a keyword search: the question as typed returns nothing (a strict AND over every word, stop words included), so its row is the question with stop words removed — one of two tools, with agentsview, given anything but the question verbatim. The released 0.7.1 fails every query on this index with <code>Quill query fuel exhausted</code> (their #441, fixed on main after this was measured); the row is the main build. It also indexed both layouts as separate conversations, 38,394 in all.</p>
+<p>¶ agentsview 0.43.0 (kenn-io, Go, SQLite, 62 agents in its table), synced with <code>agentsview sync</code>: 3 min 56 s, all 19,195 sessions — it reads both layouts, 38,390 in its database, 398,998 messages, a 915 MB store. Search runs through its daemon, so the driver starts one after the sync. Its default search returns nothing for all 100 questions as typed, and <code>--fts</code> returns nothing for 88 of them, so like CASS the row is <code>--fts</code> with stop words removed; including one-shot and automated sessions changes none of the three counts. Results are messages; the driver ranks the sessions they belong to. Its semantic and hybrid modes need an embeddings endpoint and are not in the row. Measured September 21, 2026.</p>
+<p>§ ctx 1.4.12 (ctx.rs, Rust, Tantivy, lexical by default, 39 providers): its own <code>ctx setup</code> publishes no index for this directory. 19,195 sessions on disk, "Sessions 0, Data scanned 0 B" after 25 minutes, with the daemon and without it. So the row is <code>ctx import --provider claude --path …</code>, which took 72 s and indexed all 19,195 sessions (199,499 events, a 553 MB store). Scored with <code>ctx search --limit 50 --format json</code> on <code>provider_session_id</code>. 1.4 added a semantic mode, off by default; enabled here with its own daemon it embedded 0 of 99,046 records in 1 h 38 min and its job file reports <code>"status": "budget_exhausted"</code>, so the row is the lexical index it actually serves. Measured September 21, 2026.
+<br><br>Re-run on ctx 1.6.3 on September 24, 2026, because two minor versions had landed and its site now says setup discovers and reads these sources on its own. <code>ctx setup --wait</code> finds the history and indexes none of it: "Roots 19 included roots, Sessions 0, Messages 0, Data 0 B processed", twice from a clean data root. The explicit import does work on 1.6.3 and indexes everything (19,195 sessions, 199,499 messages, 216.5 MiB), but it takes long enough that the command gives up on its own daemon first — it exits non-zero with <code>admission_pending with no observable progress for 300 seconds</code> while the refresh goes on to finish in the background. The accuracy figures in the row are still the 1.4.12 ones; what was re-measured is the setup path.
+<br><br>The setup failure depends on the layout of this corpus, not on its size. day0bench writes all 19,195 sessions into one project directory, and a real <code>~/.claude/projects</code> has one per project. Re-run on ctx 2.2.8 on October 21, 2026: on the single directory <code>ctx setup --wait</code> still fails (<code>daemon source refresh queue is full</code>). With the same files spread over 200 project directories it succeeds in 72.7 s, indexes all 19,195 sessions into a 613 MB store, and scores hit@1 7, hit@5 18, found@50 37, about the same as the import row.</p>
+<p>‡ funes 1.3.2 (Hugging Face, Rust, local bge-small embeddings and a bge-reranker, four harnesses), indexed with <code>funes index &lt;path&gt; --yes --no-thinking</code> on the same laptop: 52,371 chunks in 31 min, all 19,195 sessions, none skipped. It computed 311,583 chunks and put 52,371 of them in the index, 16.8%, counted from its own per-session lines. On a machine with no index the first <code>funes recall</code> downloads 1.2 GB of models and then stops with <code>no index yet</code>; the budgeted <code>funes index</code> run takes 933 of the 19,195 sessions, offers to finish the rest in about an hour, and answers 0 of 100 until it does. The accuracy row is with its defaults; the bracketed figures are <code>--half-life 0</code>, since the default 30-day recency weighting costs it hits on history this old. Measured September 21, 2026.</p>
+<p>Versions and dates: deja main at 9906e203, CASS 0.7.1 and main (38f0412, built from source), agentmemory @agentmemory/agentmemory 0.9.29 from npm on Sep 2, MemPalace 3.9.0 from uv on Sep 2, measured September 2–3, 2026 on an Apple Silicon laptop; the deja, funes and ctx rows re-measured there, and agentsview 0.43.0 added, on September 21, 2026. The deja row was run again on 0.21.1 on September 23, 2026 and came back the same: build 20.4 s, first answer 26 ms, p50 103 ms, hit@1 19, hit@5 36, found@50 65. The deja row is <code>go run ./scripts/day0bench -data longmemeval_s_cleaned.json -limit 100 -corpus 500 -keep DIR</code>; the other rows are the drivers under <a href="https://github.com/vshulcz/deja-vu/tree/main/scripts/day0compare"><code>scripts/day0compare</code></a> run over <code>DIR</code>.</p>
+
+<h2>Reading the numbers</h2>
+<p><b>agentmemory</b> ties deja on the measure that matters most here: found@50 is 65 for both. It is two behind at rank five and five behind at rank one. Both are plain BM25 with no model, and the honest summary is that they retrieve about as well as each other. What differs is the bill. deja got there in 17.6 seconds with nothing else running; agentmemory took 95 seconds and leaves a worker and an engine up on four ports, out of a 689 MB npm install.</p>
+<p><b>funes</b> is the result I did not expect. Hugging Face built it on local bge-small embeddings with a bge-reranker, which is the architecture everyone assumes wins. On this pile it does not rank ahead of deja at any depth. With its 30-day recency weighting off, which this old a history needs, it finds the answer in the top five for 17 questions against 36. It charges 31 minutes of embedding and 8.6 seconds a query for that. It also indexes 52,371 of the 311,583 chunks it computes, 16.8%, by its own accounting. On a fresh machine the first <code>funes recall</code> pulls down 1.2 GB of models and then tells you there is no index yet; the budgeted run it offers instead covers 933 of the 19,195 sessions and answers none of the hundred until it finishes.</p>
+<p><b>ctx</b> is the closest thing to deja in design: a Rust lexical index over thirty-nine providers' files, with MCP and a blame command of its own. It finds a little over a third of deja's hits at rank one and rank five, and about half at fifty, with queries ten times slower. Its automatic setup does not index this corpus, because all of it sits in one project directory. Spread over 200 directories the way real history is, setup works and scores about the same as the import. The semantic mode it added embedded nothing here either.</p>
+<p><b>MemPalace</b> pays for being a semantic store twice on day zero: an afternoon of mining with a model to build, and 2.6 seconds a query afterwards, for 46 found against 65.</p>
+<p><b>CASS</b> takes 56 minutes to index, longer than everything except MemPalace, and the released 0.7.1 could not answer at all on this index. The row is a build from their main branch. It is a keyword tool, so it wants the question rewritten before it returns anything.</p>
+<p><b>agentsview</b> is an archive with a web UI over sixty-two agents' files, and as a search over this pile it is quick to build: 3 minutes 56 seconds. Cut the question down to its keywords and it finds the answer at rank one for 7 questions and within fifty for 19, against 19 and 65.</p>
+<p><b>claude-mem</b> scores zero, and that is not a criticism of it. It starts recording at the first session after you install it, which is a deliberate design and a perfectly reasonable one. It just means day zero is empty.</p>
+<p>Two of the rows were given help the others were not. CASS and agentsview both return nothing for the questions as typed, so their rows use the question with stop words removed. That is a concession in their favour, and it is the only place any tool got different input.</p>
+<p>CASS and deja want the same thing at the start and different things at the end. Both index every agent's files with no model. Then CASS gives you a TUI and a robot interface to search with. deja has a terminal screen of its own, but its main job is handing the session to the agent without being asked, at session start and before a file is edited. If the job is reading your own history, CASS is better at it than we are.</p>
+
+<h2>What finishing one piece of work costs</h2>
+<p>Retrieval scores are a proxy. The thing you actually care about is whether an agent finishes the job faster because the answer was already on the machine. So: same repository, same task, same model, and the only difference is which memory is wired in.</p>
+<p>The stand is in <code>scripts/taskcost</code>. The repository is 329 files of Go, and the answer to the task sits in two places nothing points at: a build tag and an environment variable. There is a document in the repo that names the wrong variable, which is the trap. Two prior sessions on the machine did this work already and recorded the command that passed.</p>
+<p>The task, given verbatim to each arm: "find the exact command that runs the golden test and makes it pass, without modifying any file, and show the proof". Same repository, same model (opencode 1.18.32, <code>openai/gpt-5.6-luna</code>), same history on disk. The only variable is which memory is wired, each one installed the way its own installer does it. Eleven runs per arm. Every run solved the task and none of them modified the tree.</p>
+<table>
+<tr><th></th><th>tool calls</th><th>median tokens</th><th>mean</th><th>cache read</th><th>wall</th></tr>
+<tr><td>nothing wired</td><td>17.9</td><td>126,222</td><td>119,140</td><td>87,645</td><td>67 s</td></tr>
+<tr><td>agentmemory 0.9.29</td><td>15.9</td><td>104,974</td><td>124,960</td><td>90,950</td><td>70 s</td></tr>
+<tr><td class="us">deja-vu</td><td class="us y">9.8</td><td class="us y">53,558</td><td class="us y">59,167</td><td class="us y">35,700</td><td class="us y">45 s</td></tr>
+</table>
+<p>The comparison worth stating out loud, because the table has it but does not say it: deja took the median run from 126,222 tokens to 53,558, which is 57.6% off, and 17.9 tool calls to 9.8. agentmemory brought the median down to 104,974 and pushed the mean up, to 124,960 against 119,140 with no memory wired at all, and it finished 4.5% slower. A memory tool is a thing you add to the context window, and adding it is not free. On the mean, in this stand, one of the two did not earn its keep.</p>
+<p>The spread inside an arm is wide. deja's eleven runs went from 24k to 92k tokens, and what decides is whether the agent reads a file before it starts globbing, because reading a file is when the hook fires and the history reaches it. The ordering held anyway: deja's most expensive run of the eleven still cost less than the median run of either other arm.</p>
+<p>This stand has been run three times and the saving is a range, not a figure. The table above is eleven runs an arm, and it puts the median at 53,558 tokens against 126,222, which is 58% off. A second run of the same fixture, after the point-of-action line for opencode landed in 0.21.2, came out at 40k against 136k with nothing wired, 71% off, on fewer than eleven runs. The third is eleven runs an arm again, on deja main at 54f6f6ab (after 0.21.2, unreleased when measured), same model and harness, on September 25, 2026, and this time the two arms alternate run by run:</p>
+<table>
+<tr><th></th><th>tool calls</th><th>median tokens</th><th>mean</th><th>cache read</th><th>wall</th></tr>
+<tr><td>nothing wired</td><td>17.8</td><td>103,443</td><td>107,624</td><td>78,476</td><td>62 s</td></tr>
+<tr><td class="us">deja-vu</td><td class="us y">7.1</td><td class="us y">52,815</td><td class="us y">48,590</td><td class="us y">32,628</td><td class="us y">43 s</td></tr>
+</table>
+<p>That is 49% off the median and 55% off the mean, every run of both arms solved, none modified the tree. Alternating matters more than I expected. The same afternoon the deja arm's own median moved between 24k and 44k from one hour to the next, with nothing changed on this side, and a sequential pair measured that morning — all deja runs first, then all runs with nothing wired — came out at 80% off. That number is not on this page as a result, because an arm run an hour later is partly measuring the model's hour. Read the three together: deja cut the bill every time, by about half when the arms share the same hours, and what moves the saving run to run is whether the agent runs the recalled command straight away (about 16k tokens) or opens the files first to check it (33k to 100k).</p>
+<p>Two things about the agentmemory arm belong in the text and not hidden in the number. It was given the same two prior sessions through its own <code>import-jsonl</code>, and it found them: recall returns the matching observations by id and title. The agent then goes and reads the repository anyway, and that is where its 15.9 tool calls go. It also runs keyless here, which is its own documented no-key mode. Attach a model and it summarises instead, which is a different arm and this page does not measure it.</p>
+
+<h2>What is not measured</h2>
+<p>Nothing here says anything about the memory a tool writes for itself over weeks, which is the thing most of them are actually built for. A warm store is a different measurement and probably a more important one.</p>
+<p>Semantic recall with a model attached is also absent. deja has it as an option, MemPalace and agentmemory have it on by default once you give them a key, and none of those configurations are in this table.</p>
+<p>Paraphrased questions are the case where every lexical tool loses ground, deja included. The <a href="benchmarks.html">warm benchmark</a> puts numbers on that one.</p>
+
+<p class="star-cta">Every driver, the corpus builder and the scoring rule are in <a href="https://github.com/vshulcz/deja-vu">the repository</a>. If a row looks wrong, re-run it and tell me what you got.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

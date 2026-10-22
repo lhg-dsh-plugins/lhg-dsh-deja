@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deja CLI reference: search, recall, blame, stats — deja-vu</title>
+<meta name="description" content="Every deja subcommand: search, ctx, blame, fix, how, secrets, remember, forget, stats, last, sources, install, embed, sync, doctor, bench and update.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/commands.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="deja CLI reference: search, recall, blame, stats">
+<meta property="og:description" content="Every deja subcommand: search, ctx, blame, fix, how, secrets, remember, forget, stats, last, sources, install, embed, sync, doctor, bench and update.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/commands.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="deja CLI reference: search, recall, blame, stats">
+<meta name="twitter:description" content="Every deja subcommand: search, ctx, blame, fix, how, secrets, remember, forget, stats, last, sources, install, embed, sync, doctor, bench and update.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "CLI reference", "description": "Every deja subcommand: search, ctx, blame, fix, how, secrets, remember, forget, stats, last, sources, install, embed, sync, doctor, bench and update.", "url": "https://vshulcz.github.io/deja-vu/guide/commands.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/commands.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-07-19", "dateModified": "2026-10-22"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"CLI reference","item":"https://vshulcz.github.io/deja-vu/guide/commands.html"}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html" aria-current="page">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold"><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>CLI reference</h1>
+<p class="pagelede">every command, with the flags that matter<span class="mins" data-mins></span></p>
+<h2 id="the-screen">The screen</h2>
+<p>Bare <code>deja</code> in a terminal opens a full-screen search over every agent's history. It starts on the sessions behind your uncommitted change, then recent ones in this project grouped by day, each card led by the question asked. Type and the list updates as you type; <code>tab</code> switches between this project, all projects and Deleted (sessions their agent deleted that deja still holds). The preview shows how the session went, turn by turn, and the files it edited. A search that finds nothing names the other projects that have it, or the spelling your history uses. Press <code>?</code> for the keys:</p>
+<table><thead><tr><th>Key</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>↑↓</code>, <code>1</code>-<code>9</code></td><td>Pick a session. <code>↑</code> in an empty box brings back past searches.</td></tr>
+<tr><td><code>a</code></td><td>Filter by agent. The box takes filters too: an agent with a colon (<code>codex:</code>), <code>today</code>, <code>yesterday</code>, <code>week</code>, <code>month</code>, and <code>in:&lt;project&gt;</code>.</td></tr>
+<tr><td><code>↵</code></td><td>Open the session at the match. Inside: <code>/</code> finds a word in the session, <code>n</code> / <code>N</code> next and previous match, <code>]</code> / <code>[</code> next and previous turn you asked, <code>t</code> unfolds long messages, <code>g</code> / <code>G</code> top and bottom, <code>esc</code> back to the list.</td></tr>
+<tr><td><code>r</code></td><td>Resume in the agent that wrote it.</td></tr>
+<tr><td><code>o</code> or <code>ctrl-o</code></td><td>Continue in any agent: the session's context goes to the agent you pick and it starts. The agent you used last is picked and marked; agents not installed fold into one line.</td></tr>
+<tr><td><code>c</code> or <code>ctrl-y</code></td><td>Copy the context.</td></tr>
+<tr><td><code>R</code></td><td>Put a deleted session back where its agent can reopen it (<code>deja resume &lt;id&gt; --write-back</code>).</td></tr>
+<tr><td><code>ctrl-k</code></td><td>Every command by name, including copy the session id (<code>i</code>), copy the project path (<code>p</code>) and forget the session (<code>F</code>), which asks first.</td></tr>
+<tr><td><code>ctrl-u</code>, <code>ctrl-w</code></td><td>Clear the box, drop a word. <code>esc</code> clears or goes back; <code>q</code> quits from the list.</td></tr>
+</tbody></table>
+<p>The mouse works too: click a card, double-click to open, scroll. <code>DEJA_THEME=light</code> or <code>dark</code> picks the palette when the terminal does not say; <code>DEJA_THEME=dracula</code> paints it in Dracula. <code>DEJA_TUI=0</code> or <code>TERM=dumb</code> prints the text brief instead.</p>
+<h2>Commands</h2>
+<table><thead><tr><th>Command</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>deja "query"</code></td><td>Search indexed history (<code>deja search "query"</code> is the same, for a query that starts with a dash). Filters: <code>--harness --project --since --role --session --limit --all --re --no-embed --json</code>. <code>--sort date</code> lists the newest match first; the default is <code>--sort relevance</code>. <code>--limit</code> takes 1–100; without it an exact match shows 15 hits (<code>--all</code> shows every one) and a ranked fallback shows its own window.</td></tr>
+<tr><td><code>deja show &lt;id&gt;</code></td><td>Read one session, message by message. The id is the one a search hit, <code>deja last</code> or <code>deja log</code> prints; a unique prefix is enough. <code>--harness</code> picks one when the prefix matches sessions from two agents; <code>--offset</code> and <code>--limit</code> (50 messages by default) page through the messages; <code>--json</code>.</td></tr>
+<tr><td><code>deja ctx &lt;query|id&gt;</code></td><td>Print a context digest to stdout, for pasting or piping into an agent: the best-matching session for a query, or the session an id names, followed by the code it changed, each edit as the lines it removed and added.</td></tr>
+<tr><td><code>deja recall "words"</code></td><td>The page the MCP recall tool gives an agent: about 4 KB, this project first. For skills and scripts that run deja through the shell. <code>--project</code>, <code>--harness</code>, <code>--limit</code> (5 sessions by default, within the same 4 KB), <code>--offset</code> for the next page, which the page names at its end.</td></tr>
+<tr><td><code>deja blame &lt;path&gt;[:&lt;line&gt;]</code></td><td>Sessions that discussed a file, most specific first. With a line: the commit that last changed it and the session whose edit replaced the text that commit deleted, or one sentence saying why that cannot be answered. Answers from the project of the working directory, since a path names a file in this checkout; <code>--all-projects</code> asks the whole machine. <code>--all</code> lists every session rather than the top 10 (blame takes no <code>--limit</code>), <code>--project</code>, <code>--harness</code>, <code>--since</code>, <code>--json</code>; <code>--attribution</code> prints the line answer alone and <code>--git-note</code> writes it as a git note.</td></tr>
+<tr><td><code>deja files &lt;topic&gt;</code></td><td>Which files were opened or edited while that subject was being worked on, ranked by how specific each one is to it. Answers from the project of the working directory; <code>--project</code> asks about another one, <code>--all-projects</code> asks the whole machine. <code>--limit</code> bounds the list (10 by default); <code>--json</code>. Reads the file and command records deja extracts from transcripts; most agents it reads write them.</td></tr>
+<tr><td><code>deja secrets</code></td><td>Which credentials your agent transcripts are carrying, from deja’s own redaction markers — provider keys, private keys, connection strings, session cookies — with the harness, project, date and the file still holding each one. Never the value: deja’s copy is redacted. The assignment and entropy rules are a count at the bottom rather than a list. <code>--scrub</code> rewrites the transcripts that still hold one, putting the same <code>[redacted:kind]</code> marker where the value was and keeping the original beside the file; it touches only the kinds the report names, refuses a session an agent is in, and says how many findings it could not reach — a store with no per-session file (opencode, Zed, Cursor IDE, Copilot Chat) cannot be rewritten at all. <code>--limit</code> (10 sessions on the screen by default, <code>0</code> for all), <code>--json</code>, <code>--scrub</code>, <code>--dry-run</code>.</td></tr>
+<tr><td><code>deja tests</code></td><td>Your build and test runs as a series, week by week, from the commands and output already in the transcripts — nothing new is captured. A run counts as failed or passed only when the runner&rsquo;s own verdict line says so; the third band is the runs whose verdict was filtered out of the pipeline before the output was recorded. Then the tests that failed on more than one day, which is the cut that separates one afternoon&rsquo;s fixing from a test that keeps coming back. <code>--limit</code> (8 tests by default, <code>0</code> for all), <code>--json</code>.</td></tr>
+<tr><td><code>deja recap</code></td><td>What the last week settled, quoted from the sessions themselves and grouped by project, with the harness, date and session id behind every line. Writes no prose of its own. Because the output is meant for a PR description or a standup message, every line goes through a second redaction pass on top of the index&rsquo;s — addresses, internal hostnames, emails and home paths — and the screen says what that removed. <code>--since</code>, <code>--limit</code> (12 sessions by default, <code>0</code> for all), <code>--json</code>.</td></tr>
+<tr><td><code>deja friction</code></td><td>Errors that recur across three or more separate sessions, with the harnesses that hit them and the newest occurrence. Specific failures only — a missing binary, an uninstalled module — not generic <code>Traceback</code> lines. <code>--limit</code> (10 by default), <code>--json</code>.</td></tr>
+<tr><td><code>deja fix "&lt;error&gt;"</code></td><td>The command this machine ran after that same error before, when the error did not come back. Paste the failing output or pipe it in; matched on the error itself, not its words. Evidence from your own history, not a guaranteed fix. <code>--limit</code> (3 by default), <code>--json</code>.</td></tr>
+<tr><td><code>deja how "&lt;tool&gt;"</code></td><td>How this machine actually runs a thing — the real command with the real flags, from what agents ran before, ordered by how many separate sessions ran it. Query the tool or target (<code>go test</code>, <code>docker compose</code>, a script name). Command records stay out of ordinary search, so this is the only way to reach them. Answers from the project of the working directory; <code>--project</code> asks about another one, <code>--all-projects</code> asks the whole machine. <code>--limit</code> bounds the list (8 by default); <code>--json</code>.</td></tr>
+<tr><td><code>deja delete &lt;id&gt;</code></td><td>Erases a session from its agent and from deja's index, after asking; there is no undo. <code>--dry-run</code> lists the files, <code>--yes</code> skips the question. Claude Code, Codex, Cursor CLI, Gemini CLI, Qwen Code, Copilot CLI, Cline CLI, Kimi Code, Grok, dsh, pi, Senpi, OpenClaw and Antigravity sessions are removed as files; opencode through <code>opencode session delete</code>. A running session is refused, and so are agents whose session list deja has not checked. D in the TUI does the same.</td></tr>
+<tr><td><code>deja restore &lt;path&gt;</code></td><td>Spans an agent replaced in that file, newest first: the newest 30, <code>--all</code> every one. <code>--span n</code> prints one and <code>-o file</code> writes it. Never writes over an existing file unless <code>--force</code> is given, and flags a span that passed through redaction.</td></tr>
+<tr><td><code>deja remember "text"</code></td><td>Store a durable note. <code>--project</code> optional; <code>--tag</code> (repeatable) attaches keywords that boost matching queries.</td></tr>
+<tr><td><code>deja forget</code></td><td>Remove sessions by <code>--session</code>/<code>--project</code>/<code>--before</code>; <code>--dry-run</code>, <code>--all-matches</code> when a prefix names more than one session, <code>--list</code>, <code>--unforget &lt;id&gt;</code>. It names forks that still hold a copy of the forgotten turns, with the command to forget them too.</td></tr>
+<tr><td><code>deja stats</code></td><td>Totals, top projects, activity, and how many replaced spans <code>deja restore</code> could hand back. <code>--card</code> (SVG, <a href="../card/">PNG in the browser</a>), <code>--html</code> (timeline), <code>--redaction</code>, <code>--json</code>, and the same <code>--project --harness --since --role</code> filters as search. <code>--impact</code> prints the measured impact report (recalls, reuse, distillation ratio) with the arithmetic labeled. <code>--year</code> is the last twelve months of your own work in one screen — sessions and agents, the files and commands the agents worked through, what was asked twice, what they kept tripping over — with every number labelled with the arithmetic behind it and the outbound redaction pass applied, because it is written to be shown to other people.</td></tr>
+<tr><td><code>deja</code></td><td>Bare, on a terminal: the interactive screen (<a href="#the-screen">above</a>). Piped, it prints what is indexed and three commands to start from.</td></tr>
+<tr><td><code>deja brief</code></td><td>Today's activity as text: recalls served, déjà vu moments, a question asked in more than one session, the piece of work agents have re-used most, an error several sessions hit, a suggested search from your own history. This is what bare <code>deja</code> printed before the screen; <code>DEJA_TUI=0</code> brings it back there.</td></tr>
+<tr><td><code>deja log [n]</code></td><td>Audit trail: recent recalls and injections; <code>--last</code> prints the most recent injected digest verbatim; <code>--json</code>.</td></tr>
+<tr><td><code>deja last [n]</code></td><td>Recent sessions. <code>--project</code>, <code>--harness</code>, <code>--since</code>, <code>--role</code>, <code>--from &lt;machine&gt;</code> (sessions synced from one machine; <code>local</code> for this one), <code>--json</code>.</td></tr>
+<tr><td><code>deja resume &lt;id&gt;</code></td><td>Reopen a session in the agent that wrote it. Prints the command; <code>--exec</code> runs it. Where the harness scopes its session list to one project, the command carries the <code>cd</code> that makes the id resolve; where a harness has no way to reopen a conversation from a terminal, it says so rather than printing something that would start a new one. For a transcript the agent has since deleted, <code>--write-back</code> first writes it back into the agent's store from what deja indexed, so the command reopens it; the file holds the conversation, not the tool calls. It never replaces a file. <code>--app</code> opens a Codex CLI session in the ChatGPT desktop app instead, on macOS and Windows. The <a href="harnesses.html">matrix</a> has the column. On the screen, <code>r</code> resumes the selected session and <code>R</code> puts a deleted one back.</td></tr>
+<tr><td><code>deja wip</code></td><td>What the last session in this project was doing: the task, what it settled, the files in flight, the last command and whether it failed. Derived from the transcript — nothing is asked of the agent, and nothing is stored. After a compaction a session spends a median of 28 actions before its next edit, against 10 from a cold start; this is the context it is missing. <code>--json</code>.</td></tr>
+<tr><td><code>deja warmup</code></td><td>Build or refresh the index without searching — for a shell profile or a provisioning script. With automatic indexing off it only reports the index.</td></tr>
+<tr><td><code>deja statusline</code></td><td>One line for an agent's status bar: today's sessions and what deja has served, and — when the host pipes its session payload — the file this session is working on most with what earlier sessions decided about it. Silent when no earlier session touched it. <code>deja install statusline</code> puts it in Claude Code's status bar; the <code>-auto</code> targets for Cursor CLI, Copilot CLI, Qwen Code, CodeBuddy Code, Grok Build, Kimi Code, TRAE CLI and Antigravity CLI put it in theirs, and leave one you already set up. opencode and Kilo CLI get it through a TUI plugin, VS Code through a small local extension <code>vscode-auto</code> adds, dsh under its web composer, and OpenClaw as a deja tab in the Control UI.</td></tr>
+<tr><td><code>deja completion &lt;bash|zsh|fish|powershell&gt;</code></td><td>Print a completion script for your shell. <code>pwsh</code> is accepted as an alias for PowerShell.</td></tr>
+<tr><td><code>deja uninstall &lt;target|--all&gt;</code></td><td>Remove deja's wiring from an agent. Other servers in shared config files are left alone.</td></tr>
+<tr><td><code>deja version</code></td><td>Print the version.</td></tr>
+<tr><td><code>deja help [command]</code></td><td>Every command with a line on each, or one command's usage, description and examples. <code>deja &lt;command&gt; --help</code> says the same, except after <code>aider</code> and <code>goose</code>, where it is that tool's own help.</td></tr>
+<tr><td><code>deja sources</code></td><td>Discovered stores per harness, with redaction counts.</td></tr>
+<tr><td><code>deja install &lt;target|--all|--auto&gt;</code></td><td>Wire MCP recall (and hooks) into your agents. <code>--all</code> wires MCP recall into every agent found on this machine; <code>--auto</code> adds the hooks and plugins each one takes. <code>--no-guidance</code> skips the instruction block, <code>--no-index</code> skips the first index build, <code>--force</code> replaces a deja skill file you have edited since deja wrote it. <code>deja help install</code> lists the targets.</td></tr>
+<tr><td><code>deja rules [sync]</code></td><td>Your standing rules in one file, <code>~/.config/deja/rules.md</code>. <code>deja rules</code> lists each installed agent's global rules file and whether its copy is in sync; <code>sync</code> writes the rules there as a marked block, leaving the rest of the file alone, and an empty file takes the copies back out. Agents whose global rules file deja has not verified are listed and left alone.</td></tr>
+<tr><td><code>deja rules candidates [--json] [--limit n] [--since 90d]</code></td><td>The turns where you corrected an agent, across every tool on the machine, each numbered with the session it came from — every one by default, the newest <code>n</code> with <code>--limit</code>. deja does not group them: the same rule comes back in different words each time. Ask your agent to suggest your rules and its skill runs this, groups the list, and shows the rules with the turns behind them; nothing goes into <code>rules.md</code> until you pick. Writes nothing.</td></tr>
+<tr><td><code>deja embed</code></td><td>Build the semantic vector sidecar from an embedding endpoint.</td></tr>
+<tr><td><code>deja sync export/import/ssh</code></td><td>Move redacted memory between machines. Bare <code>deja sync</code> exchanges with every machine deja knows; <code>sync ssh &lt;host&gt;</code> pushes, <code>--pull</code> pulls, <code>--both</code> does both, <code>--full</code> sends everything rather than what changed. <code>sync export</code> also takes <code>--include-imported</code> and <code>--peer name</code>.</td></tr>
+<tr><td><code>deja sync forget &lt;host&gt;</code></td><td>Drop a machine deja knows, so a bare <code>deja sync</code> stops trying it.</td></tr>
+<tr><td><code>deja promote &lt;id&gt;</code></td><td>Distill a session into a curated note: quoted evidence with provenance and a lifecycle state (<code>--state accepted|rejected|superseded|stale</code>). Corrections append; the note outranks the raw transcript in recall. <code>--to path</code> also appends a Markdown block for repo-visible notes. <code>--tag</code> adds keywords; promoting into ground another accepted note already covers prints a conflict warning naming the older note.</td></tr>
+<tr><td><code>deja view</code></td><td>Browse memory in one self-contained local HTML: sessions with previews, recall audit trail, curated notes. <code>--out path</code>, <code>--no-open</code>.</td></tr>
+<tr><td><code>deja doctor</code></td><td>Diagnose stores, wiring, index and version. <code>--json</code>, <code>--offline</code>. Stores that are not on this machine fold into one line; <code>--all</code> lists them. <code>--deep</code> re-parses a sample of source files and resolves postings to prove the index against the sources; exits non-zero on drift.</td></tr>
+<tr><td><code>deja bench recall|context|prompt|block|ingest|read</code></td><td>Reproducible benchmarks: search quality, context readiness, what the per-prompt hook fires on, whether the block carries the answer, what an index update costs per class of change, and what reading each store costs.</td></tr>
+<tr><td><code>deja update</code></td><td>Update a standalone install (Homebrew/npm update via the package manager). <code>--force</code> writes over a binary a package manager owns or one built from source. At most once a day, an interactive command also says when a newer release is out, with the upgrade command for whatever installed deja; <code>DEJA_OFFLINE=1</code> turns that off, and so does <code>DEJA_NO_UPDATE_NOTICE</code> set to any value, which also hides the note a new version prints on its first run. Hooks and the MCP server never show it.</td></tr>
+<tr><td><code>deja index</code></td><td>Read what the agents on this machine have written since the last pass. <code>--rebuild</code> reads everything again, which is what a parser change needs; <code>--quiet</code> says nothing when it worked, for a run out of a shell profile or a hook, and still reports every failure. On a busy machine, <code>DEJA_NO_AUTO_INDEX=1</code> or <code>"auto_index": false</code> in <code>~/.config/deja/policy.json</code> stops every automatic update: search, show, MCP tools and hooks answer from the last finished index and say when it was updated, with no index they print this command instead of building, and nothing deja starts on its own writes it: <code>deja index</code>, <code>search --rebuild</code> and commands that change the index on purpose, like <code>forget</code> and <code>sync</code>, still do. Run it from cron or a timer: piped or under cron it prints one line per phase, and it exits 1 when the index could not be written and 3 when it was written but part of the input was not read (a path it could not read, a line it skipped, or a file whose read stopped moving for <code>DEJA_STORE_TIMEOUT</code>, ten minutes by default). Set the variable before <code>deja install</code> so hooks started without your environment see it too; the file reaches them either way.</td></tr>
+<tr><td><code>deja mcp</code></td><td>Run the MCP server on stdio. <code>deja install</code> wires this for you; run it by hand only to debug a client.</td></tr>
+<tr><td><code>deja share &lt;id-prefix&gt;</code></td><td>A redacted digest of one session, for pasting to someone else.</td></tr>
+<tr><td><code>deja handoff [id-prefix]</code></td><td>What the next agent needs to carry on: the problem, what was tried, what was settled, and where it stopped. The digest is the same text whichever agent it is for: <code>--to &lt;agent&gt;</code> checks the name and prints the command line that opens that agent with it, and <code>--exec</code> runs that command.</td></tr>
+<tr><td><code>deja aider [args]</code></td><td>Refresh aider's read-only context file from this project's history, then start aider with the rest of the line. On macOS and Linux it also answers each message with a recall for it. Everything after <code>aider</code> is aider's own flags, <code>--help</code> included; <code>deja help aider</code> is deja's page for it.</td></tr>
+<tr><td><code>deja goose [args]</code></td><td>Start Goose with recall re-read every turn rather than fixed when the session opened; the rest of the line goes to Goose, <code>--help</code> included.</td></tr>
+<tr><td><code>deja check -</code></td><td>Read a plan from stdin and print the errors past sessions on this machine kept running into that name something in it. It checks repeated errors, not decisions; <code>deja</code> and recall answer those.</td></tr>
+<tr><td><code>deja hook-*</code></td><td>What agent hooks call; <code>deja install --auto</code> wires them. <code>hook-context</code> gives the project digest once at session start, <code>hook-prompt</code> a recall for each prompt, <code>hook-tool</code> what a command or edit already has before it runs, <code>hook-tool-after</code> what followed a failed command before, and <code>hook-antigravity</code> the digest on Antigravity's first turn. <code>hook-plan</code> gives the repeated errors history has on a plan before it runs, but no installer wires it: add it by hand as a <code>PreToolUse</code> hook matched on <code>ExitPlanMode</code>. Each reads the host's payload on stdin.</td></tr>
+</tbody></table>
+<h2 id="what-the-index-keeps">What the index keeps</h2>
+<p>Every switch below is off by default and goes in the environment; <code>search_only</code> can also go in <code>~/.config/deja/policy.json</code>, which reaches hooks started without your shell. A parse switch applies to what is read from then on, so run <code>deja index --rebuild</code> after changing one. The parse switches and <code>DEJA_INCLUDE_SUBAGENTS=0</code> also hold for what <code>deja sync</code> brings from another machine, as it arrives; a rebuild keeps imported sessions as they came, so to take what a switch left out, unset it and import the batch again (<code>deja sync ssh &lt;host&gt; --pull --full</code> for a pull). Search-only is applied by the first build and by <code>deja index</code> run by hand, which rebuilds once when it changes; a hook or agent running under a different environment keeps the index as it was built.</p>
+<table><thead><tr><th>Setting</th><th>Leaves out</th><th>Stops working</th></tr></thead><tbody>
+<tr><td><code>DEJA_SEARCH_ONLY=1</code> or <code>"search_only": true</code></td><td>The tables mined after the records are written: fixes, co-occurrence, commands, command failures and session facts. About a fifth of a build's CPU on a tool-heavy store.</td><td><code>deja fix</code> and the MCP fix mode, which say the index is search-only. Silent instead: the remedy line after a failed command, fix hints at session start and on a plan, the remedy for a missing program, the "last time this ran" line and command hints before a command, the "ran:" line on recall hits and under the pre-edit note, recurring commands in orient, the "try deja how" hint on a search, and the neighbour-word rescue when a search finds nothing else. Search and recall results, blame, friction and the pre-edit note itself keep working.</td></tr>
+<tr><td><code>DEJA_INDEX_COMMANDS=0</code></td><td>Commands the agent ran.</td><td><code>deja how</code> and <code>deja fix</code>, which name the switch, command hints, and the command tables above.</td></tr>
+<tr><td><code>DEJA_INDEX_TOOL_OUTPUT=0</code></td><td>What tools printed.</td><td><code>deja friction</code>, <code>deja fix</code>, searching tool output, and recall by error text.</td></tr>
+<tr><td><code>DEJA_INDEX_PATHS=0</code></td><td>Which files a session touched.</td><td>The pre-edit note, <code>deja files</code>, and file-level <code>deja blame</code>, which falls back to sessions that name the file.</td></tr>
+<tr><td><code>DEJA_INDEX_EDITS=0</code></td><td>The text an edit replaced.</td><td><code>deja restore</code>, which names the switch, and line blame by replaced text.</td></tr>
+<tr><td><code>DEJA_INDEX_WRITES=0</code></td><td>The per-line hashes of what an edit wrote.</td><td>Line blame by written text.</td></tr>
+</tbody></table>
+<p>On a 3,000-session tool-heavy synthetic store, <code>deja index --rebuild</code> took 2.1 s (3.3 s of CPU), 1.9 s (2.7 s of CPU) search-only, and 1.55 s (1.6 s of CPU) search-only with all five parse switches off.</p>
+
+<div class="note"><code>deja help</code> lists every command with a line on each, and any command takes <code>--help</code> for its flags and examples. Everything is offline except <code>update</code>, <code>sync ssh</code>, the <code>doctor</code> version check, the once-a-day release check on an interactive command (<code>DEJA_OFFLINE=1</code> turns it off) and <code>deja embed</code> against an endpoint you set, after which each search sends its query there too.</div>
+
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,425 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+
+	"github.com/vshulcz/deja-vu/internal/sources"
+)
+
+// Cline's hook files cannot carry context: TaskStart and UserPromptSubmit are
+// spawned detached with stdout closed, PreToolUse keeps only cancel and
+// overrideInput, PreCompact is mapped to no event at all, and --hooks-dir is
+// read by nothing. Verified against CLI 3.0.46. A plugin's runtime hooks can:
+// beforeTool's appendContext reaches the model on 3.0.69.
+//
+// Plugins are the channel that works. A registered rule takes a function for
+// its content, resolved when the session builds its instructions — which is
+// session-start recall by another name — and a registered command puts /deja
+// in the same session.
+//
+// A rule is handed nothing, so it recalls against the session rather than the
+// question. registerMessageBuilder is the prompt-aware half: its build is
+// called with the messages on their way to the model, and a new array returned
+// from it is what gets sent. Editing the array in place is discarded, as is a
+// string or a {messages} wrapper — verified against CLI 3.0.54.
+func installClineAuto(exe string, uninstall bool) (installResult, error) {
+	// The launcher, not this binary: a generated plugin is as much a config
+	// as a hooks.json, and one that names the build it was installed from
+	// stops working the day that build moves (#3682).
+	exe = hookExeFor(exe, uninstall)
+	dir := filepath.Join(sources.ClinePluginsDir(), "deja")
+	path := filepath.Join(dir, "index.js")
+	if uninstall {
+		if _, err := os.Stat(path); err != nil {
+			return installResult{Path: path, Action: "unchanged"}, nil
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			return installResult{}, err
+		}
+		// And the directories deja made above it, while each is empty and
+		// the record says it is deja's (#3698).
+		pruneCreatedDir(filepath.Dir(dir))
+		return installResult{Path: path, Action: "removed"}, nil
+	}
+	noteCreatedDirs(dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return installResult{}, err
+	}
+	old, err := readConfig(path)
+	if err != nil {
+		return installResult{}, err
+	}
+	a, err := writeIfChanged(path, old, []byte(clinePluginJS(exe)))
+	if err != nil {
+		return installResult{}, err
+	}
+	// Cline treats a directory as a plugin package, reading its skills/ and
+	// its name, only when a package.json there lists the entry under
+	// cline.plugins. Without it the skill below was never loaded and the
+	// plugin was listed as "index" (#4316).
+	pkgPath := filepath.Join(dir, "package.json")
+	oldPkg, err := readConfig(pkgPath)
+	if err != nil {
+		return installResult{}, err
+	}
+	pkgAction, err := writeIfChanged(pkgPath, oldPkg, []byte(clinePluginPackage))
+	if err != nil {
+		return installResult{}, err
+	}
+	// Cline discovers skills bundled in the plugin package, which is the only
+	// channel it has for one: it has no user-level instructions file, so until
+	// now it got the recall rule and no manual at all. Written after index.js
+	// so a failure here leaves a working plugin rather than a directory the
+	// uninstall path would not recognise.
+	skill := filepath.Join(dir, "skills", "deja-history")
+	noteCreatedDirs(skill)
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		return installResult{}, err
+	}
+	oldSkill, err := readConfig(filepath.Join(skill, "SKILL.md"))
+	if err != nil {
+		return installResult{}, err
+	}
+	skillAction, err := writeGuidanceFile(filepath.Join(skill, "SKILL.md"), oldSkill, []byte(skillFile(skillBody)))
+	if err != nil {
+		return installResult{}, err
+	}
+	// The plugin directory rides along, so the skill inside it is covered by
+	// the line naming the directory rather than going unmentioned (#3254).
+	// So is the package.json: an install that only adds it still changed the
+	// directory.
+	if skillAction == "unchanged" {
+		skillAction = pkgAction
+	}
+	return wroteAll(installResult{Path: path, Action: a},
+		installResult{Path: dir, Action: skillAction}), nil
+}
+
+// clineAutoPreflight refuses, before the MCP entry is written, a plugin
+// install cannot finish: the entry went first, so a read-only ~/.cline/plugins
+// was refused with deja already in cline_mcp_settings.json and the target
+// reported as refused while half wired (#5203).
+func clineAutoPreflight(exe string) error {
+	dir := filepath.Join(sources.ClinePluginsDir(), "deja")
+	skill := filepath.Join(dir, "skills", "deja-history", "SKILL.md")
+	for _, f := range []struct {
+		path string
+		next []byte
+	}{
+		{filepath.Join(dir, "index.js"), []byte(clinePluginJS(preflightHookExe(exe)))},
+		{filepath.Join(dir, "package.json"), []byte(clinePluginPackage)},
+		{skill, []byte(skillFile(skillBody))},
+	} {
+		old, err := readConfig(f.path)
+		if err != nil {
+			return err
+		}
+		if f.path == skill {
+			// An edited skill is kept, not written.
+			if !forceGuidance && skillWasEdited(f.path, old) {
+				continue
+			}
+			// And an unmarked one is copied to SKILL.md.bak in place first.
+			if len(old) > 0 && !bytes.Equal(old, f.next) && !skillIsMarked(f.path) {
+				if err := configWritable(f.path + ".bak"); err != nil {
+					return err
+				}
+				if dir := filepath.Dir(f.path); !dirWritable(dir) {
+					return &fs.PathError{Op: "write", Path: dir, Err: fs.ErrPermission}
+				}
+			}
+		}
+		if err := writeWouldFail(f.path, old, f.next); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// clinePluginPackage is the manifest that makes ~/.cline/plugins/deja a plugin
+// package to Cline, so it loads skills/ and lists the plugin as "deja".
+const clinePluginPackage = `{
+  "name": "deja",
+  "private": true,
+  "cline": {
+    "plugins": ["./index.js"]
+  }
+}
+`
+
+// clineSkillPath is the deja-history skill inside the plugin package.
+func clineSkillPath() string {
+	return filepath.Join(sources.ClinePluginsDir(), "deja", "skills", "deja-history", "SKILL.md")
+}
+
+func clinePluginJS(exe string) string {
+	return fmt.Sprintf(`// generated by deja install — safe to delete; regenerate with: deja install cline-auto
+import { execFileSync } from "node:child_process";
+
+const DEJA = %q;
+
+function run(args, input = "", timeout = 10000) {
+  try {
+    return execFileSync(DEJA, args, {
+      input,
+      encoding: "utf8",
+      timeout,
+      maxBuffer: 4 * 1024 * 1024,
+      stdio: ["pipe", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    // Memory is optional: a plugin that throws here takes the session with it.
+    return "";
+  }
+}
+
+// Cline wraps what the user typed in a mode tag before it becomes a message.
+function userText(message) {
+  if (!message || message.role !== "user" || !Array.isArray(message.content)) return "";
+  const text = message.content
+    .filter((part) => part && part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n");
+  return text.replace(/<\/?user_input[^>]*>/g, "").trim();
+}
+
+// The tools whose failure a shell error signature describes. cline's is
+// run_commands; the others let the same builder answer a harness that renamed
+// it. A file edit fails in ways this line cannot read, so it is left out.
+const COMMAND_TOOLS = new Set([
+  "run_commands", "execute_command", "run_command", "Bash", "bash", "shell", "terminal",
+]);
+
+// commandFailure finds the newest command tool_result that failed, as build()
+// sees it: {type:"tool_result", name, content:[{query,result,error,success}]}.
+// Returns the message index, the failing entry, and the text to look up — or
+// null when the last command did not fail.
+function commandFailure(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || !Array.isArray(m.content)) continue;
+    for (const part of m.content) {
+      if (!part || part.type !== "tool_result" || !COMMAND_TOOLS.has(part.name)) continue;
+      const entries = Array.isArray(part.content) ? part.content : [];
+      for (const e of entries) {
+        if (!e || e.success !== false) continue;
+        const output = typeof e.result === "string" ? e.result : typeof e.error === "string" ? e.error : "";
+        if (!output.trim()) continue;
+        return { at: i, entry: e, id: part.tool_use_id || "", name: part.name, command: e.query || "", output };
+      }
+    }
+    // Only the most recent tool result is worth a repair; stop at the first
+    // message that carries one, failed or not.
+    if (m.content.some((p) => p && p.type === "tool_result")) break;
+  }
+  return null;
+}
+
+// appendRepair returns a copy of a tool_result part with the repair added to
+// the failing entry's result text. Editing result rather than adding a part of
+// a new shape keeps what cline serializes onto the wire valid.
+function appendRepair(part, line) {
+  return {
+    ...part,
+    content: (Array.isArray(part.content) ? part.content : []).map((e) =>
+      e && e.success === false && typeof e.result === "string"
+        ? { ...e, result: e.result + "\n\n" + line }
+        : e,
+    ),
+  };
+}
+
+// The session this plugin serves and whether it compacted since the prompt
+// builder last asked. onEvent sits on the plugin object, setup sees the
+// session, so both live out here.
+let session = "";
+let compacted = false;
+let workspace = "";
+
+// isCompactionStart reads cline's status notice for a compaction about to run:
+// {type:"status-notice", metadata:{kind:"auto_compaction", phase:"started"}}
+// on CLI 3.0.69. messages.json keeps every turn through it, so the capture
+// reads the whole session even though cline does not wait for this hook.
+function isCompactionStart(ev) {
+  const meta = ev && ev.type === "status-notice" && ev.metadata;
+  return Boolean(meta) && typeof meta.kind === "string" && meta.kind.endsWith("compaction") && meta.phase === "started";
+}
+
+// The files a tool call reads or edits, as hook-tool's names for them: the
+// line about a file goes out at the read, the step before an edit, and at the
+// edit for the edits after it.
+function fileCalls(tool, input) {
+  if (!input) return [];
+  if (tool === "read_files" && Array.isArray(input.files)) {
+    return input.files.filter((f) => f && typeof f.path === "string").map((f) => ["read", f.path]);
+  }
+  if (tool === "editor" && typeof input.path === "string") return [["edit", input.path]];
+  if (tool === "apply_patch" && typeof input.input === "string") return [["apply_patch", "", input.input]];
+  return [];
+}
+
+export default {
+  name: "deja",
+  manifest: { capabilities: ["rules", "commands", "skills", "hooks"] },
+  hooks: {
+    onEvent: (ev) => {
+      if (!isCompactionStart(ev) || !session) return;
+      compacted = true;
+      run(["hook-precompact"], JSON.stringify({ session_id: session, cwd: workspace || process.cwd(), harness: "cline" }));
+    },
+    // What beforeTool returns as appendContext reaches the model beside the
+    // tool's result (CLI 3.0.69). Cline's own PreToolUse hook file keeps only
+    // cancel and overrideInput, so the plugin is the channel here too.
+    beforeTool: (ctx) => {
+      try {
+        const name = (ctx && ctx.toolCall && ctx.toolCall.toolName) || "";
+        for (const [tool, path, patch] of fileCalls(name, ctx && ctx.input)) {
+          const line = run(["hook-tool", "--plain"], JSON.stringify({
+            tool_name: tool,
+            tool_input: patch ? { command: patch } : { file_path: path },
+            session_id: session,
+            cwd: workspace || process.cwd(),
+          }), 5000);
+          if (line) return { appendContext: line };
+        }
+      } catch {}
+    },
+    // A run is one prompt and everything the agent did for it. When it ends,
+    // the session's live stamp goes, so another session's MCP recall can
+    // answer with this one now rather than twenty minutes from now; the next
+    // prompt stamps it again before the model is called. Cline has no hook for
+    // the session itself ending.
+    afterRun: () => {
+      if (session) run(["hook-session-end"], JSON.stringify({ session_id: session, cwd: workspace || process.cwd() }), 2000);
+    },
+  },
+  setup(api, ctx) {
+    const sessionID = (ctx && ctx.session && ctx.session.sessionId) || "";
+    session = sessionID;
+    workspace = (ctx && ctx.workspaceInfo && ctx.workspaceInfo.rootPath) || "";
+    const cwd = workspace || process.cwd();
+    // build runs more than once for a single prompt — cline calls it again
+    // with the message list it is about to send — and only the last return is
+    // used. So the answer is cached per prompt rather than skipped after the
+    // first call, which would inject into the copy nobody sends.
+    let asked = "";
+    let recalled = "";
+    // The repair for each failed command, kept by its tool_use id: build() runs
+    // many times for one turn, and hook-tool-after must be asked once, not on
+    // every rebuild of the same array.
+    const repairs = new Map();
+    api.registerMessageBuilder({
+      id: "deja:prompt",
+      source: "deja-vu",
+      build: (messages) => {
+        if (!Array.isArray(messages)) return;
+        let out = null;
+        const edit = () => out || (out = messages.slice());
+
+        // The question just asked, answered from history. Prepended to the last
+        // user message. Cline's own reminders ride as user messages too ("[SYSTEM]
+        // This run is not complete..." under --yolo, 3.0.69), so those are
+        // skipped or recall answers the boilerplate.
+        let at = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const text = messages[i] && messages[i].role === "user" ? userText(messages[i]) : "";
+          if (text && !/^\s*\[SYSTEM\]/.test(text)) {
+            at = i;
+            break;
+          }
+        }
+        if (at >= 0) {
+          const prompt = userText(messages[at]);
+          // After a compaction the same prompt is asked again: the answer is
+          // now the recovery packet, and it belongs in the next request.
+          if (prompt !== asked || compacted) {
+            asked = prompt;
+            compacted = false;
+            recalled = run(["hook-prompt", "--plain"], JSON.stringify({
+              prompt,
+              session_id: sessionID,
+              cwd,
+            }));
+          }
+          // Silence is the common case: the hook only speaks when the history
+          // actually answers the question.
+          if (recalled) {
+            edit();
+            out[at] = {
+              ...messages[at],
+              content: [{ type: "text", text: recalled }, ...messages[at].content],
+            };
+          }
+        }
+
+        // The command that just failed, and what this machine ran after that
+        // same error before. cline's PreToolUse hook cannot carry this — it
+        // keeps only cancel and overrideInput — but the builder's return is
+        // what gets sent, so the repair rides beside the failing result in the
+        // same turn rather than a turn later. Silence unless the store holds a
+        // pair.
+        const fail = commandFailure(messages);
+        if (fail) {
+          if (!repairs.has(fail.id)) {
+            repairs.set(fail.id, run(["hook-tool-after", "--plain"], JSON.stringify({
+              tool_name: fail.name,
+              tool_response: fail.output,
+              session_id: sessionID,
+              cwd,
+            })));
+          }
+          const line = repairs.get(fail.id);
+          if (line) {
+            edit();
+            const m = out[fail.at];
+            out[fail.at] = {
+              ...m,
+              content: m.content.map((p) =>
+                p === fail.entry || (p && p.type === "tool_result" && p.tool_use_id === fail.id)
+                  ? appendRepair(p, line)
+                  : p,
+              ),
+            };
+          }
+        }
+
+        return out || undefined;
+      },
+    });
+    api.registerRule({
+      id: "deja:recall",
+      source: "deja-vu",
+      // A function, not a string: it runs when the session assembles its
+      // instructions, so every session gets current history rather than
+      // whatever was on disk at install time.
+      // The session and its workspace go with it: hook-context stamps the
+      // session live, which keeps it out of its own MCP recall, and ranks by
+      // the workspace rather than wherever cline was launched (#4199).
+      content: () => run(["hook-context", "--plain"], JSON.stringify({ session_id: sessionID, cwd })),
+    });
+    api.registerCommand({
+      name: "deja",
+      description: "Search your own past coding sessions",
+      handler: (input) => {
+        const query = (input || "").trim();
+        if (!query) return "Usage: /deja <what you are looking for>";
+        // A command the user just typed can wait: the first search may have
+        // to build the index, which a hook never gets to do.
+        //
+        // "--" when the query names one of deja's own flags: searching for
+        // "--json" or "--all-matches" otherwise dies in flag parsing and comes
+        // back as an empty history. Sent only when it is needed, so a deja too
+        // old to know the terminator still answers every ordinary query.
+        const args = query.startsWith("-") ? ["search", "--", query] : ["search", query];
+        const found = run(args, "", 120000);
+        return found || `+"`No past session matches ${query}.`"+`;
+      },
+    });
+  },
+};
+`, exe)
+}

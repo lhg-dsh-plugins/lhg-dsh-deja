@@ -1,0 +1,229 @@
+package sources
+
+import (
+	"bufio"
+	"hash/fnv"
+	"hash/maphash"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/model"
+)
+
+// ExcludePath is the primary privacy configuration, kept outside the cache.
+func ExcludePath() string {
+	return filepath.Join(ConfigDir(), "exclude")
+}
+
+func ExclusionPatterns() []string {
+	var out []string
+	read := func(path string) {
+		f, err := os.Open(path)
+		if err != nil {
+			return
+		}
+		defer func() { _ = f.Close() }()
+		s := bufio.NewScanner(f)
+		for s.Scan() {
+			line := strings.TrimSpace(s.Text())
+			if line != "" && !strings.HasPrefix(line, "#") {
+				out = append(out, strings.ToLower(line))
+			}
+		}
+	}
+	read(ExcludePath())
+	for _, pattern := range strings.Split(os.Getenv("DEJA_EXCLUDE_PROJECTS"), ",") {
+		if pattern = strings.TrimSpace(pattern); pattern != "" {
+			out = append(out, strings.ToLower(pattern))
+		}
+	}
+	return out
+}
+
+// harnessExcludePrefix marks a line in the exclude file that names a store
+// rather than a project.
+//
+// One file rather than two: the reader already keeps their privacy rules here,
+// and a store they will never read is the same kind of rule. `harness:opencode`
+// reads as what it is beside the project patterns, and a project that happens
+// to be called "harness:something" was never addressable by a pattern anyway.
+const harnessExcludePrefix = "harness:"
+
+// ExcludedHarnesses is the set of stores the reader has asked deja not to read.
+//
+// `deja doctor` reports a store it found but could not read as `needs-sqlite3`
+// or `needs-zstd`, which names a package to install. For a harness the reader
+// does not use, that is advice for a problem they do not have, and there was no
+// way to stop it: the exclude file took project patterns only (#3499).
+//
+// Exact names, not globs. The set is the twenty-five the loader registers and
+// `deja sources` prints them, so there is nothing to match loosely against, and
+// a typo that silently matched several stores is worse than one that matches
+// none.
+//
+// The prefix is what keeps the two namespaces apart, in both directions: a
+// plain `opencode` line is a project pattern and does not exclude the store of
+// that name, and a `harness:opencode` line carries its prefix into the project
+// matcher below, where it matches no project anyone has.
+func ExcludedHarnesses() map[string]bool {
+	out := map[string]bool{}
+	for _, pattern := range ExclusionPatterns() {
+		if name := strings.TrimPrefix(pattern, harnessExcludePrefix); name != pattern {
+			if name = strings.TrimSpace(name); name != "" {
+				out[name] = true
+			}
+		}
+	}
+	for _, name := range strings.Split(os.Getenv("DEJA_EXCLUDE_HARNESSES"), ",") {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+// HarnessExcluded reports whether this store is one of them.
+func HarnessExcluded(name string) bool { return ExcludedHarnesses()[strings.ToLower(name)] }
+
+// Excluder answers exclusion questions from patterns read once. Sync imports
+// ask per record, and re-opening the exclude file for each one costs seconds
+// on a large batch.
+type Excluder struct{ patterns []string }
+
+func NewExcluder() Excluder { return Excluder{patterns: ExclusionPatterns()} }
+
+func (e Excluder) Empty() bool { return len(e.patterns) == 0 }
+
+func (e Excluder) Match(project string) bool {
+	// Sync-imported sessions are stored as "imported:<project>"; a glob
+	// written for the local name must still match after the trip.
+	project = strings.ToLower(project)
+	bare := strings.TrimPrefix(project, "imported:")
+	for _, pattern := range e.patterns {
+		// A `harness:` line names a store, not a project. Left in the pattern
+		// list it would exclude any project whose name contains the harness's —
+		// `harness:continue` would take out a project called "continue-deploy".
+		if strings.Contains(project, pattern) {
+			return true
+		}
+		// path.Match, not filepath.Match: a project name is a "/"-separated
+		// logical name, not a host path, so a glob must match the same way
+		// wherever deja runs — filepath.Match reads "\\" as the separator on
+		// windows and would not glob a "/"-joined name there.
+		if ok, _ := path.Match(pattern, project); ok {
+			return true
+		}
+		if ok, _ := path.Match(pattern, bare); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func ExcludedProject(project string) bool { return NewExcluder().Match(project) }
+
+// ExclusionFingerprint identifies the pattern set in force, so an index can
+// record which one it was built under.
+//
+// The patterns only ever ran at ingest, and nothing noticed when they changed:
+// setting one and running `deja index` applied nothing and said nothing, while
+// the project stayed searchable and kept going out over sync (#1307). Order and
+// case do not matter — the same set written differently is the same set, and a
+// reshuffled exclude file is not a reason to tell someone to rebuild.
+func ExclusionFingerprint() string {
+	patterns := ExclusionPatterns()
+	// "none" rather than an empty string: an index built with no exclusions has
+	// recorded that fact, and a manifest written before this existed has not.
+	// Collapsing the two would have kept the note silent in the ordinary case —
+	// index first, decide a project is private afterwards.
+	if len(patterns) == 0 {
+		return "none"
+	}
+	sorted := append([]string(nil), patterns...)
+	sort.Strings(sorted)
+	h := fnv.New64a()
+	for _, p := range sorted {
+		_, _ = h.Write([]byte(p))
+		_, _ = h.Write([]byte{0})
+	}
+	return strconv.FormatUint(h.Sum64(), 16)
+}
+
+// CountSessions reports how many conversations a slice of parsed transcripts
+// amounts to. The index keys a session on harness+id, so two transcripts that
+// carry one id are one session there — a harness mid-migration writes the same
+// conversation to both its old jsonl store and its new sqlite one, and a
+// resumed run continues an id in a second file. Counting records instead makes
+// a store read as bigger than what deja holds.
+func CountSessions(ss []model.Session) int {
+	seen := make(map[string]struct{}, len(ss))
+	for _, s := range ss {
+		seen[s.Harness+":"+s.ID] = struct{}{}
+	}
+	return len(seen)
+}
+
+// IsMessageRole says whether a record is a message: something said or printed
+// in the conversation, as opposed to the command, file, edit and written-line
+// records deja derives from tool calls. Every count of messages uses it, so
+// index, sources and stats say one number for one store.
+func IsMessageRole(role string) bool {
+	switch role {
+	case RoleCommand, RoleFiles, RoleEdit, RoleWrote:
+		return false
+	}
+	return true
+}
+
+// CountMessages counts the messages in these sessions, by IsMessageRole, the
+// way the index keeps them: the same message arriving twice in one session —
+// a store's two formats of one conversation — is kept once.
+//
+// The text is keyed by its hash, as the index's own dedupe keys it. Keyed by
+// the text itself the set was a second copy of the corpus: 1.3 GB live at the
+// peak of a cold build over a 5 GB store, and the build counts three times.
+func CountMessages(ss []model.Session) int {
+	type msgKey struct {
+		session string
+		role    string
+		sec     int64
+		nsec    int
+		text    uint64
+	}
+	seed := maphash.MakeSeed()
+	n := 0
+	seen := map[msgKey]struct{}{}
+	for _, s := range ss {
+		session := s.Harness + ":" + s.ID
+		for _, m := range s.Messages {
+			if !IsMessageRole(m.Role) {
+				continue
+			}
+			k := msgKey{session, m.Role, m.Time.Unix(), m.Time.Nanosecond(), maphash.String(seed, m.Text)}
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			n++
+		}
+	}
+	return n
+}
+
+func FilterSessions(ss []model.Session) []model.Session {
+	ex := NewExcluder()
+	if ex.Empty() {
+		return ss
+	}
+	out := make([]model.Session, 0, len(ss))
+	for _, s := range ss {
+		if !ex.Match(s.Project) {
+			out = append(out, s)
+		}
+	}
+	return out
+}

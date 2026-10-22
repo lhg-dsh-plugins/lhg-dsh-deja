@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Continue stores its history — session format</title>
+<meta name="description" content="Where Continue writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/continue.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Continue stores its history — session format">
+<meta property="og:description" content="Where Continue writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/continue.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Continue stores its history — session format">
+<meta name="twitter:description" content="Where Continue writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Continue writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Continue","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/continue.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/continue.html","name":"Continue","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html" aria-current="page">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Continue</h1>
+<ul>
+<li><strong>ID</strong>: <code>continue</code></li>
+<li><strong>Store</strong>: <code>${CONTINUE_GLOBAL_DIR:-~/.continue}/sessions/&lt;sessionId&gt;.json</code>, one document per session, with <code>sessions.json</code> beside them as the list.</li>
+<li><strong>Read override</strong>: <code>DEJA_CONTINUE_ROOT</code> replaces the global directory (sessions are read from its <code>sessions/</code>)</li>
+<li><strong>Format</strong>: whole-file JSON rewritten on change; full re-parse per pass.</li>
+</ul>
+<p>Continue runs in VS Code and JetBrains, and its chat, agent and plan modes all</p>
+<p>write the same file. The session document holds <code>history[]</code>, each item a</p>
+<p><code>message</code> with a <code>role</code> and a <code>content</code> that is either a string or an array of</p>
+<p><code>{type, text}</code> parts; an assistant item that called tools carries them in</p>
+<p><code>toolCallStates[]</code>. A compaction rewrites the file to the system message and</p>
+<p>one assistant item carrying <code>conversationSummary</code>: that item is indexed under</p>
+<p>the summary role, and since the turns before it are gone from disk, the index</p>
+<p>keeps the records it already held for them when the file comes back opening</p>
+<p>with a summary, through a rebuild too (#4795). <code>system</code> and <code>tool</code> roles are skipped — the first is</p>
+<p>configuration, and a tool&#39;s result arrives under the assistant item that asked</p>
+<p>for it. Each call in <code>toolCallStates[]</code> is read off its <code>parsedArgs</code>: <code>Bash</code></p>
+<p>and <code>run_terminal_command</code> give a command, the file tools their <code>filepath</code></p>
+<p>(<code>file_path</code> for the CLI&#39;s <code>Edit</code>), and the editors the replaced and written</p>
+<p>sides — <code>old_string</code>/<code>new_string</code>, <code>edits[]</code>, <code>content</code>/<code>contents</code>, and the</p>
+<p><code>changes</code> of <code>edit_existing_file</code>, without the <code>// ... existing code ...</code></p>
+<p>lines that stand for what was left alone (#4529). A call whose status is</p>
+<p>anything but <code>done</code> (errored, canceled, or still waiting on approval) keeps its path and output but no edit or written lines. A command carries</p>
+<p><code>→ exit N</code> where Continue wrote the code: the CLI&#39;s errored <code>Bash</code> output</p>
+<p>&#34;Error executing tool Bash: Error (exit code N): …&#34;, and the IDE&#39;s output</p>
+<p><code>status</code> &#34;Command failed with exit code N&#34;. A clean run gets no code: the CLI</p>
+<p>resolves a non-zero exit with empty stderr as done, and the IDE says &#34;Command</p>
+<p>completed&#34; for a process a signal ended (#4530).</p>
+<p>Nothing in the file carries a timestamp. <code>sessions.json</code> records <code>dateCreated</code></p>
+<p>and <code>workspaceDirectory</code> per session, so that date is the session&#39;s start (the</p>
+<p>file&#39;s mtime when the list has no entry); turns are laid out one second apart</p>
+<p>from the start, which is enough to order them within the session. The project name comes from</p>
+<p><code>workspaceDirectory</code>, falling back to the list entry when the document omits it;</p>
+<p>a <code>file://</code> URI there is decoded first (#4461).</p>
+<p>Shape verified against Continue&#39;s own types (<code>core/index.d.ts</code>: <code>Session</code>,</p>
+<p><code>ChatHistoryItem</code>, <code>ChatMessage</code>) and <code>core/util/paths.ts</code>; a live-store</p>
+<p>validation is still welcome.</p>
+<ul>
+<li><strong>MCP</strong>: <code>deja install continue</code> adds the server to <code>mcpServers:</code> in</li>
+</ul>
+<p><code>${CONTINUE_GLOBAL_DIR:-~/.continue}/config.yaml</code> — a list of mappings, not the keyed object other</p>
+<p>harnesses use, so the entry is found again by its <code>name</code>. Verified on</p>
+<p>@continuedev/cli 1.5.47 against a recording endpoint: the <code>deja</code> tool is in</p>
+<p>the tool list of every request, and a call came back with the seeded decision</p>
+<p>in the bytes Continue sent next. The TUI header lists it under <code>MCP Servers</code>.</p>
+<ul>
+<li><strong>Skill</strong>: the same install writes <code>~/.continue/skills/deja-history/SKILL.md</code>.</li>
+</ul>
+<p>Continue reads skills from its global folder and from <code>&lt;workspace&gt;/.claude/skills</code>,</p>
+<p>and names each one in the <code>Skills</code> tool&#39;s own description — so it is in front</p>
+<p>of the model on every turn, which is what makes recall arrive unasked.</p>
+<ul>
+<li><strong>Command</strong>: <code>prompts:</code> in the same config carries <code>/deja</code>. Continue expands</li>
+</ul>
+<p>slash commands in its TUI; in <code>-p</code> headless mode the text goes through</p>
+<p>verbatim, so the entry is written but its expansion is unverified here.</p>
+<ul>
+<li><strong>Auto-recall</strong>: none yet. The CLI carries a Claude-shaped hooks system —</li>
+</ul>
+<p>Claude&#39;s own event set, <code>additionalContext</code>, settings read from</p>
+<p><code>~/.continue/settings.json</code> — and nothing fires it in 1.5.47: hooks written</p>
+<p>for every event loaded (its own log says &#34;Hooks loaded: 8 handler(s) across 8</p>
+<p>event type(s)&#34;) and no handler ran, while the same run&#39;s tool call went</p>
+<p>through. It becomes work the day a release fires them.</p>
+<ul>
+<li><strong>Resume</strong>: <code>cn --fork &lt;sessionId&gt;</code>, which <code>deja resume</code> prints. It takes any</li>
+</ul>
+<p>id in the store this reader walks — <code>historyManager.load</code> opens</p>
+<p><code>&lt;sessions&gt;/&lt;id&gt;.json</code> (<code>core/util/history.ts</code>) — so the earlier reading</p>
+<p>here, that nothing accepts an arbitrary id, was wrong. What it does differ</p>
+<p>in is the ending: the flag forks, so the history comes back under a new</p>
+<p>session id rather than continuing the old one, and deja says so on stderr</p>
+<p>beside the command. The fork runs its tools in the current directory, so</p>
+<p>the command goes with a <code>cd</code> into the session&#39;s <code>workspaceDirectory</code> (#4375),</p>
+<p>or, with that gone, a note that the fork runs where you are (#4460).</p>
+<p><code>cn --resume</code> remains the last-session shortcut, and</p>
+<p>the editor reopens one from its history view.</p>
+<ul>
+<li><strong>Handoff</strong>: exec, <code>cn &lt;prompt&gt;</code> opens an interactive session with it.</li>
+</ul>
+<p>Costs on that version, measured from the recorded requests: deja&#39;s tool schema</p>
+<p>is 3,112 bytes of the 10 KB tool block in every request, the skill adds 700</p>
+<p>bytes to the <code>Skills</code> tool&#39;s description, and a recall that answers adds 1,384</p>
+<p>bytes to the turn that asked.</p>
+<p><strong>Last verified:</strong> 2026-09-07</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

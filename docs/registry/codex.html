@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Codex CLI stores its history — session format</title>
+<meta name="description" content="Where Codex CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/codex.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Codex CLI stores its history — session format">
+<meta property="og:description" content="Where Codex CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/codex.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Codex CLI stores its history — session format">
+<meta name="twitter:description" content="Where Codex CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Codex CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Codex CLI session format","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/codex.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/codex.html","name":"Codex CLI session format","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html" aria-current="page">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Codex CLI session format</h1>
+<h2 id="store-and-files">Store and files</h2>
+<p>Codex CLI stores state under <code>${CODEX_HOME:-~/.codex}</code>. Xcode-hosted Codex sessions use <code>${HOME}/Library/Developer/Xcode/CodingAssistant/codex</code>. deja keeps both stores under the single <code>codex</code> harness: <code>DEJA_CODEX_ROOT</code> relocates the CLI store and <code>DEJA_XCODE_CODEX_ROOT</code> relocates the Xcode store. Rollouts are <code>sessions/YYYY/MM/DD/rollout-*.jsonl</code>, and a rollout Codex has compressed is <code>rollout-*.jsonl.zst</code> — its own background worker rewrites one once it is seven days old (<code>COMPRESSED_SUFFIX</code>, <code>MIN_ROLLOUT_AGE</code> in <code>codex-rs/rollout/src/compression.rs</code>), and it materializes the plain file back before appending, so both names exist for one session while that happens. <code>archived_sessions/</code> holds the same JSONL for sessions Codex has archived. <code>history.jsonl</code> belongs to the CLI store and contains prompt history.</p>
+<h2 id="rollout-records">Rollout records</h2>
+<p>A rollout begins with session metadata and then event records. The parser reads <code>payload.role</code>, <code>payload.content</code>, and the older <code>payload.message</code> fallback.</p>
+<pre><code class="language-json">{&#34;timestamp&#34;:&#34;2026-07-17T09:00:00Z&#34;,&#34;type&#34;:&#34;session_meta&#34;,&#34;payload&#34;:{&#34;session_id&#34;:&#34;session-7&#34;,&#34;cwd&#34;:&#34;/work/api&#34;}}
+{&#34;timestamp&#34;:&#34;2026-07-17T09:00:01Z&#34;,&#34;type&#34;:&#34;response_item&#34;,&#34;payload&#34;:{&#34;role&#34;:&#34;assistant&#34;,&#34;content&#34;:[{&#34;type&#34;:&#34;output_text&#34;,&#34;text&#34;:&#34;The migration is complete.&#34;}]}}</code></pre>
+<p><code>payload.role</code> is retained. When only <code>payload.message</code> is present, an <code>agent_message</code> payload is the assistant and anything else is the user. <code>event_msg</code> turns are read only when the rollout has no roled <code>response_item</code> messages, since a current rollout carries every turn in both streams. An <code>exec_command</code> (<code>cmd</code>) or <code>shell_command</code> (<code>command</code>) <code>function_call</code> becomes a command record, its <code>function_call_output</code> tool output (with the exit code), and a <code>custom_tool_call</code> (<code>apply_patch</code>) the edit it made. Content may be a string or an array of text-bearing parts. <code>session_meta</code> supplies the stable ID and project working directory. Timestamps accept RFC 3339, Unix seconds, or Unix milliseconds.</p>
+<h2 id="prompt-history">Prompt history</h2>
+<p>Each history line is independent:</p>
+<pre><code class="language-json">{&#34;session_id&#34;:&#34;session-7&#34;,&#34;ts&#34;:1784278801,&#34;text&#34;:&#34;check the migration&#34;}</code></pre>
+<p>History entries map to one-message sessions with role <code>user</code> and project <code>history</code>. The same prompt is usually in its rollout too. A full load keeps only the entries whose session has no rollout; an incremental pass reads the history file on its own, so a prompt can still appear in both.</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li>Rollout files are append-only JSONL and may have a torn final line.</li>
+<li>Events without a payload, and payloads that are neither a message nor a tool call, are ignored.</li>
+<li><code>history.jsonl</code> duplicates user prompts but lacks assistant responses and project metadata.</li>
+<li>Reading a compressed rollout needs the <code>zstd</code> CLI; without it the store reports <code>zstd CLI not found</code> rather than quietly holding fewer sessions. A store of plain rollouts needs nothing.</li>
+<li>Older records use <code>payload.message</code>; current records generally use structured <code>payload.content</code>.</li>
+</ul>
+<p><strong>Last verified:</strong> 2026-09-10</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

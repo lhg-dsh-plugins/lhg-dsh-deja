@@ -1,0 +1,57 @@
+{
+  "name": "deja",
+  "version": "0.23.0",
+  "description": "deja-vu memory for Kimi Code: recall the sessions your other coding agents already wrote — Claude Code, Codex, Cursor, opencode and thirty-eight more, including work from before it was installed.",
+  "keywords": [
+    "memory",
+    "recall",
+    "sessions",
+    "search",
+    "history"
+  ],
+  "author": "vshulcz",
+  "homepage": "https://vshulcz.github.io/deja-vu/guide/memory-for-kimi.html",
+  "license": "MIT",
+  "interface": {
+    "displayName": "deja",
+    "shortDescription": "Search your own past AI coding sessions, from every tool on this machine.",
+    "longDescription": "deja indexes the session files coding agents already write to disk — Claude Code, Codex, Cursor, opencode, Gemini, Zed and more — and answers from them. Ask what you fixed before instead of debugging it twice. The index is local: no LLM, no embeddings, no network path besides a daily release check, which DEJA_OFFLINE=1 turns off. Needs the deja binary: https://github.com/vshulcz/deja-vu",
+    "developerName": "vshulcz",
+    "websiteURL": "https://github.com/vshulcz/deja-vu"
+  },
+  "skills": "./extensions/kimi/skills/",
+  "commands": "./extensions/kimi/commands/",
+  "sessionStart": {
+    "skill": "deja-history"
+  },
+  "mcpServers": {
+    "deja": {
+      "command": "node",
+      "args": [
+        "./extensions/kimi/bin/deja-mcp.mjs"
+      ]
+    }
+  },
+  "hooks": [
+    {
+      "event": "UserPromptSubmit",
+      "command": "node ./extensions/kimi/hooks/recall.mjs hook-context --plain --once",
+      "timeout": 30
+    },
+    {
+      "event": "UserPromptSubmit",
+      "command": "node ./extensions/kimi/hooks/recall.mjs hook-prompt --plain",
+      "timeout": 30
+    },
+    {
+      "event": "PreCompact",
+      "command": "node ./extensions/kimi/hooks/recall.mjs hook-precompact --harness kimi",
+      "timeout": 30
+    },
+    {
+      "event": "SessionEnd",
+      "command": "node ./extensions/kimi/hooks/recall.mjs hook-session-end",
+      "timeout": 30
+    }
+  ]
+}

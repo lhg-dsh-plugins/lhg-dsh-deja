@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auditing what a coding agent actually did — deja-vu</title>
+<meta name="description" content="How to review agent changes after the fact: the diff says what changed, the transcript says what was tried and why.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/auditing-agents.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Auditing what a coding agent actually did">
+<meta property="og:description" content="How to review agent changes after the fact: the diff says what changed, the transcript says what was tried and why.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/auditing-agents.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="Auditing what a coding agent actually did">
+<meta name="twitter:description" content="How to review agent changes after the fact: the diff says what changed, the transcript says what was tried and why.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Auditing what an agent actually did", "description": "How to review agent changes after the fact: the diff says what changed, the transcript says what was tried and why.", "url": "https://vshulcz.github.io/deja-vu/guide/auditing-agents.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/auditing-agents.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-08-24", "dateModified": "2026-10-09"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"Auditing an agent","item":"https://vshulcz.github.io/deja-vu/guide/auditing-agents.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How can I see what a coding agent actually did in a session?","acceptedAnswer":{"@type":"Answer","text":"The transcript records more than the conversation: the files each turn opened, the commands it ran with their exit status, and the exact spans an edit replaced. Indexing those makes them searchable after the fact."}},{"@type":"Question","name":"Which sessions touched this file?","acceptedAnswer":{"@type":"Answer","text":"deja blame <path> lists the sessions that discussed or changed a file, with what was decided and when — session history rather than git authorship."}},{"@type":"Question","name":"Can I see what memory was given to the agent?","acceptedAnswer":{"@type":"Answer","text":"Yes. deja log lists every recall and injection with its size and the sessions it served, and deja log --last prints the exact text most recently handed over."}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold" open><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html">Across machines</a>
+<a href="auditing-agents.html" aria-current="page">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>Auditing what an agent actually did</h1>
+<p class="pagelede">the diff says what changed; the transcript says what was tried<span class="mins" data-mins></span></p>
+
+<p>You want to review agent changes from a week ago: what was touched, and why. Or a build broke and the last person to touch it was a session, not a person. Or a review asks a question the diff cannot answer: what else did it try first.</p>
+
+<h2>The transcript records more than the conversation</h2>
+<p>What the harness writes is not only the words. Each turn carries the files it opened, the commands it ran and what they exited with, and the exact text an edit replaced. That is the part every summary throws away and the part an audit needs — a summary can tell you it "fixed the pool exhaustion"; only the record tells you which file, which command, and what the code said before.</p>
+
+<h2>Asking about a file</h2>
+<pre>deja blame internal/index/ingest.go</pre>
+<p>The sessions that discussed or changed it — those that spelled out the path ahead of a bare mention of the name, then by how often they mention it, with a promoted note above the transcript it came from — each with the project, the agent and the line that settled something. Session history rather than git authorship: it answers <em>why</em> for changes that a commit message reduced to "fix ingest", and it covers work that never became a commit at all.</p>
+<h2>Asking about one line</h2>
+<pre>$ deja blame internal/index/ingest.go:120
+ingest.go:120 last changed in 8f31c0a9 · Sep 12 · fix: titles borrowed from plumbing
+  written in claude · 4c7e21b8 · deja-vu
+  replaced: if strings.HasPrefix(title, harnessOutputTitlePrefix) {
+  why, in full: deja ctx 4c7e21b8</pre>
+<div class="term-shot"><img src="../assets/blame.gif" alt="git blame names a commit and a person; deja blame on the same line adds the session that made that change, the text the line held before, and the question it was answering" loading="lazy"><p class="cap">the same line, asked of git and of the session history — recorded against a generated repository, so nobody's code or prompts are in the frame</p></div>
+<p>Git says which commit last changed the line. Then two rules, in order. The strong one: a session whose recorded edit replaced the same text that commit deleted performed this change rather than merely having the file open, and the text it replaced is printed with it. The weaker one, for the commits that deleted nothing — 71% of them — is that some session wrote this very line, into this very file, before the commit carried it. The answer says which rule found it: <code>replaced:</code> or <code>wrote this line:</code>.</p>
+<p>How often it answers, measured on this repository on 2026-09-20 over 150 random committed lines: <b>40%</b> got a session, and <b>55%</b> of the 88 lines whose last change was in the previous month. On the same 150 lines the replaced-text rule alone answered 6.7%, and nothing it answered was lost — the written side added 50 lines it had nothing to say about. Of those 50, every one was checked against the named session's own transcript on disk and the line was in it. Both rules are bounded by the same two things: the index holds only the sessions the ignore rules admit, and a line is attributed only on evidence — a replaced span or a written line, never proximity in time. The rest is silence, and deja says which silence it is: no indexed session wrote the line or what the commit replaced, the file is not tracked, the line is past the end of the file, the line has no commit yet. What it never prints is a reason — over 81 attributed lines the session's own conclusion overlapped the change zero times, so a single line lifted out of a session would read as the reason for a change it has nothing to do with. The session id and <code>deja ctx</code> are the honest answer to <em>why</em>.</p>
+<p>The reverse question is <code>deja files &lt;topic&gt;</code> — which files the work on a topic actually touched — and it answers plainly when nothing matched rather than inventing a list:</p>
+<pre>$ deja files "zed extension licence"
+3 sessions mention "zed extension licence", none of them recorded a file near it</pre>
+
+<h2>Asking what the agent was told</h2>
+<p>An audit of the agent is incomplete without an audit of what it was handed. <code>deja log</code> lists every recall and injection — when, which kind, how much, and how many sessions it drew on:</p>
+<pre>$ deja log
+2026-08-24 12:11  dejavu   895 B · 2 sessions
+2026-08-24 10:50  hook     2.2 KB · 3 sessions</pre>
+<p><code>deja log --last</code> prints the exact digest most recently served, so "what did it actually see" is a question with an answer rather than an inference. That includes the lines injected at the moment of action — before an edit, before a command, after one failed — which used to be counted but not kept, so the surface with the best evidence behind it was the one that could not be read back. Where a trust policy is in force, the receipt names the rule that allowed the injection.</p>
+
+<h2>What this is not</h2>
+<p>It is not a compliance trail. The records are whatever the harness wrote and whatever survived redaction — nothing here proves an agent did not do something, and a harness that logs sparsely leaves gaps that no index can fill. <a href="../registry/README.html">The format registry</a> documents, per harness, what is recorded and what deja could not verify, including the gaps.</p>
+<p>It is also not free of judgement: recall ranks, and ranking can be wrong. For an audit, read the session — <code>deja show &lt;id&gt;</code> and <code>deja resume &lt;id&gt;</code> open the real thing rather than a digest of it. In the screen bare <code>deja</code> opens, <code>↵</code> on a session reads it from the match, and <code>n</code> steps to the next one.</p>
+
+<p><a href="where-sessions-are-stored.html">Where the transcripts live</a> · <a href="privacy.html">What is indexed and what is stripped</a> · <a href="commands.html">CLI reference</a></p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

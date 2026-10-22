@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Copilot CLI stores its history — session format</title>
+<meta name="description" content="Where Copilot CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/copilot.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Copilot CLI stores its history — session format">
+<meta property="og:description" content="Where Copilot CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/copilot.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Copilot CLI stores its history — session format">
+<meta name="twitter:description" content="Where Copilot CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Copilot CLI writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Copilot CLI","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/copilot.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/copilot.html","name":"Copilot CLI","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html" aria-current="page">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Copilot CLI</h1>
+<ul>
+<li><strong>ID</strong>: <code>copilot</code></li>
+<li><strong>Store</strong>: <code>${COPILOT_HOME:-~/.copilot}/session-state/&lt;sessionId&gt;/events.jsonl</code>;</li>
+</ul>
+<p><code>COPILOT_HOME</code> also moves the MCP config, the skill and the hooks below</p>
+<ul>
+<li><strong>Read override</strong>: <code>DEJA_COPILOT_ROOT</code> (points at the <code>session-state</code> directory)</li>
+<li><strong>Format</strong>: append-only JSONL, one event per line, each <code>{type, data, timestamp}</code></li>
+</ul>
+<p><code>session.start</code> carries <code>sessionId</code> and <code>context.cwd</code>, which is where the</p>
+<p>project name comes from; the directory the file sits in is not the id and can</p>
+<p>differ from it. Conversation turns are <code>user.message</code> and <code>assistant.message</code>,</p>
+<p>both with <code>data.content</code> as a plain string.</p>
+<p>The work is filed outside the message stream. <code>tool.execution_start</code> carries</p>
+<p><code>toolName</code> and <code>arguments</code> — <code>path</code> for the file tools, <code>command</code> for <code>bash</code>,</p>
+<p>and <code>old_str</code>/<code>new_str</code> for an edit, which is the one place the replaced text</p>
+<p>survives. <code>create</code> hands over the whole file as <code>file_text</code>, and that is the</p>
+<p>only record a created file&#39;s lines were ever in a session — a commit that adds</p>
+<p>them deletes nothing for the replaced side to match. <code>view</code> is the file read.</p>
+<p>With a GPT model there is no <code>edit</code> or <code>create</code>: every edit is <code>apply_patch</code>,</p>
+<p>whose <code>arguments</code> is the patch string itself, read into files, the removed</p>
+<p>lines and the added ones as codex&#39;s patches are. <code>tool.execution_complete</code> carries <code>data.result.content</code>,</p>
+<p>indexed as tool output whether or not the call failed, because the error a</p>
+<p>command hit is what a later search reaches for. Its <code>success</code> flag is true on</p>
+<p>failed runs too, so a non-zero exit code is read from the telemetry or the</p>
+<p>trailer in the output and added to the command record. <code>session.shutdown</code></p>
+<p>lists <code>codeChanges.filesModified</code>; deja does not read it, since the tool events</p>
+<p>already name every file.</p>
+<p>A <code>task</code> sub-agent runs inside the parent&#39;s log: each of its records carries</p>
+<p><code>agentId</code>, and <code>subagent.started</code> names the agent. deja reads those records as</p>
+<p>a session of their own (kind <code>sidechain</code>, parent the session, agent the</p>
+<p><code>agentName</code>), so <code>deja show</code> links the two and blame names the sub-agent for</p>
+<p>what it wrote. As with Claude Code&#39;s sub-agent files, the run is kept as its</p>
+<p>task, its last turns and its edits unless <code>DEJA_INCLUDE_SUBAGENTS=1</code>; <code>=0</code></p>
+<p>leaves it out. Copilot cannot reopen one (<code>resumable: false</code>), so <code>deja resume</code></p>
+<p>points at the parent. Forgetting the parent forgets the run with it.</p>
+<p><code>/fork</code> writes a new session that opens with copies of the source&#39;s records,</p>
+<p>times included, then a <code>session.info</code> record of <code>infoType</code> <code>fork</code> whose message</p>
+<p>names the source: <code>Forked from &#34;&lt;title&gt;&#34; (&lt;id&gt;) as …</code>. deja reads the fork as</p>
+<p>kind <code>fork</code> with that parent, drops the copied sub-agent runs (the source holds</p>
+<p>them), and blame gives a line both hold to the source.</p>
+<ul>
+<li><strong>MCP</strong>: <code>deja install copilot</code> writes <code>mcpServers.deja</code> into</li>
+</ul>
+<p><code>${COPILOT_HOME:-~/.copilot}/mcp-config.json</code>.</p>
+<ul>
+<li><strong>Skill</strong>: <code>~/.copilot/skills/deja-history/SKILL.md</code> (under <code>$COPILOT_HOME</code></li>
+</ul>
+<p>when set), loaded on demand;</p>
+<p>Copilot invokes a skill by name, so it is also the <code>/deja-history</code> command.</p>
+<ul>
+<li><strong>Auto-recall</strong>: <code>deja install copilot-auto</code> writes</li>
+</ul>
+<p><code>~/.copilot/hooks/deja.json</code>, which Copilot loads as user-level hooks and VS</p>
+<p>Code Copilot Chat reads too. Older installs put the entries in</p>
+<p><code>settings.json</code> or <code>config.json</code>; the install takes them out. Measured on</p>
+<p>1.0.92 against a stub model, every one of these reaches the model:</p>
+<ul>
+<li><code>sessionStart</code> (<code>deja hook-context --copilot</code>): the digest, as a message</li>
+</ul>
+<p>of its own in front of the first request, kept for the session.</p>
+<ul>
+<li><code>userPromptSubmitted</code> (<code>deja hook-prompt --copilot</code>): per-prompt recall,</li>
+</ul>
+<p>appended to the user&#39;s turn inside <code>&lt;system_reminder&gt;</code>.</p>
+<ul>
+<li><code>preToolUse</code> (<code>deja hook-tool --copilot</code>, matcher <code>bash|powershell|edit|create</code>):</li>
+</ul>
+<p>the file&#39;s prior decision before an edit, sent as a message after the</p>
+<p>tool&#39;s result. Copilot honours the matcher, so deja does not run for reads.</p>
+<ul>
+<li><code>postToolUse</code> and <code>postToolUseFailure</code> (<code>deja hook-tool-after --copilot</code>,</li>
+</ul>
+<p>matcher <code>bash|powershell</code>): the fix line after a failed command. A non-zero</p>
+<p>exit is still a successful tool call, so <code>postToolUse</code> carries most of</p>
+<p>them; a tool that errors fires <code>postToolUseFailure</code> with the text in <code>error</code>.</p>
+<ul>
+<li><code>PreCompact</code> (<code>deja hook-precompact</code>): spelled the way VS Code reads it;</li>
+</ul>
+<p>Copilot runs a PascalCase key too, with snake_case fields. The payload</p>
+<p>names <code>events.jsonl</code> as <code>transcript_path</code>; deja captures the session from</p>
+<p>it and hands the packet back on the next tool call or prompt.</p>
+<ul>
+<li><code>preMcpToolCall</code> (<code>deja hook-mcp-call</code>) and <code>sessionEnd</code></li>
+</ul>
+<p>(<code>deja hook-session-end</code>): the MCP server is told nothing about who is</p>
+<p>calling, so the first marks the session live before each MCP request and</p>
+<p>recall leaves it out, and the second clears the mark. A <code>preMcpToolCall</code></p>
+<p>hook&#39;s output becomes the request&#39;s <code>_meta</code>, so it prints nothing.</p>
+<p>Every answer is the flat <code>{&#34;additionalContext&#34;: …}</code>; a nested</p>
+<p><code>hookSpecificOutput</code> runs and reaches no one. <code>COPILOT_HOME</code> moves all of</p>
+<p>these files.</p>
+<ul>
+<li><strong>Resume</strong>: <code>copilot --resume=&lt;sessionId&gt;</code>.</li>
+<li><strong>Handoff</strong>: exec.</li>
+</ul>
+<h2 id="status-line">Status line</h2>
+<p><code>deja install copilot-auto</code> sets <code>statusLine</code> in <code>~/.copilot/settings.json</code></p>
+<p>(<code>$COPILOT_HOME</code>), with <code>refreshInterval: 1</code> so a first index build moves on</p>
+<p>screen; without it Copilot runs the command on events only. Copilot&#39;s</p>
+<p><code>transcript_path</code> is the session&#39;s directory, which deja reads as the session</p>
+<p>id. A status line already set there is left alone. Rendered live on 1.0.79.</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li><code>assistant.message</code> records whose content is empty and whose work is entirely</li>
+</ul>
+<p>in tool calls used to be dropped; the tool events now carry them.</p>
+<ul>
+<li>Tool names are lowercase (<code>edit</code>, <code>view</code>, <code>create</code>, <code>bash</code>) where Claude Code</li>
+</ul>
+<p>capitalises, and the edit argument is <code>old_str</code> rather than <code>old_string</code>.</p>
+<ul>
+<li>A session directory can outlive its <code>events.jsonl</code>; the discovery walk only</li>
+</ul>
+<p>picks up files that exist.</p>
+<ul>
+<li>Since 1.0.79 user settings live in <code>settings.json</code> and <code>config.json</code> is</li>
+</ul>
+<p>managed by the CLI. On each start it moves user keys still in <code>config.json</code></p>
+<p>across, and a <code>hooks</code> key there replaces the one in <code>settings.json</code> whole, so</p>
+<p>while the reader&#39;s hooks are still in <code>config.json</code> deja writes its entry</p>
+<p>beside them.</p>
+<ul>
+<li>A hook answer in Claude Code&#39;s <code>hookSpecificOutput</code> envelope is run and</li>
+</ul>
+<p>logged as a success, and its context reaches nobody: Copilot reads only a</p>
+<p>top-level <code>additionalContext</code>.</p>
+<p>Specified in <a href="https://github.com/vshulcz/deja-vu/issues/655">#655</a>, work</p>
+<p>records added in <a href="https://github.com/vshulcz/deja-vu/pull/1231">#1231</a>,</p>
+<p>auto-recall in <a href="https://github.com/vshulcz/deja-vu/issues/4231">#4231</a>.</p>
+<p><strong>Last verified:</strong> 2026-10-07</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

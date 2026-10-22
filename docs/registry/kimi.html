@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Kimi Code stores its history — session format</title>
+<meta name="description" content="Where Kimi Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/kimi.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Kimi Code stores its history — session format">
+<meta property="og:description" content="Where Kimi Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/kimi.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Kimi Code stores its history — session format">
+<meta name="twitter:description" content="Where Kimi Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Kimi Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Kimi Code","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/kimi.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/kimi.html","name":"Kimi Code","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html" aria-current="page">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Kimi Code</h1>
+<ul>
+<li><strong>ID</strong>: <code>kimi</code></li>
+<li><strong>Store</strong>: <code>${KIMI_CODE_HOME:-~/.kimi-code}/sessions/&lt;workDirKey&gt;/&lt;sessionId&gt;/agents/main/wire.jsonl</code></li>
+<li><strong>Read override</strong>: <code>DEJA_KIMI_ROOT</code> (takes precedence over <code>KIMI_CODE_HOME</code> for reads)</li>
+<li><strong>Format</strong>: append-only JSONL wire protocol (observed <code>protocol_version</code> 1.1–1.4)</li>
+</ul>
+<p>Tool calls are <code>tool.call</code> events with <code>name</code> and <code>args</code>: <code>path</code> for the file tools (a relative one is put under the session&#39;s cwd, as Kimi resolves it; #5228), <code>old_string</code>/<code>new_string</code> on <code>Edit</code>, and the whole file as <code>content</code> on <code>Write</code>, which is the only record a created file&#39;s lines were ever in a session. <code>fixtures/registry/kimi/sessions/wd_demo_0123456789ab/session_changes01</code> pins both shapes, read back as <code>## what it changed</code> by the generic reader.</p>
+<p><code>state.json</code> next to each session supplies title, workDir (project) and</p>
+<p>timestamps, and a change to it alone re-reads the session (#4446). User turns arrive as <code>context.append_message</code>; streamed assistant</p>
+<p>turns are reconstructed from <code>step.begin</code> → <code>content.part</code> (type <code>text</code> only;</p>
+<p><code>think</code> parts are skipped) → <code>step.end</code>, with an end-of-file flush so a</p>
+<p>response that is mid-stream when indexing runs is not lost; the next pass</p>
+<p>reads the file whole when the stream goes on, so the reply is stored once</p>
+<p>(#4445). <code>tool.result</code></p>
+<p>events keep their <code>output</code> text under the <code>tool-output</code> role, error results</p>
+<p>included. Sub-agent histories under <code>agents/&lt;agent-id&gt;/wire.jsonl</code> are read</p>
+<p>as sessions of their own naming the parent session (#4483), opening with the</p>
+<p>task the parent handed it (origin <code>system_trigger</code>/<code>subagent</code>, #5227): the</p>
+<p>task, the files it changed and its last turns, so <code>deja blame</code> names the</p>
+<p>sub-agent that wrote a file (#5229). <code>DEJA_INCLUDE_SUBAGENTS=1</code> takes the whole</p>
+<p>run and <code>=0</code> skips them. A <code>/btw</code> side question is the exception: Kimi runs it</p>
+<p>in a fork of <code>main</code> that <code>state.json</code> marks <code>forkedFrom</code>, and deja reads that</p>
+<p>fork by default from the btw reminder on (origin <code>system_trigger</code>/<code>btw</code> in</p>
+<p>0.28, <code>injection</code> with variant <code>btw</code> from 0.43), so the question and the answer</p>
+<p>are kept without the copy of main&#39;s context the fork opens with. It is a</p>
+<p>session of its own, kind <code>fork</code>, naming the session it was asked in. A fork</p>
+<p>with no btw reminder, such as an <code>Agent</code> call with <code>fork: true</code>, is a sub-agent</p>
+<p>run like any other (#4484). A session <code>/fork</code> or <code>kimi fork</code> made copies each</p>
+<p>of its source&#39;s <code>wire.jsonl</code> and closes the copy with a <code>forked</code> record, and</p>
+<p>its <code>state.json</code> names the source as <code>forkedFrom</code>: deja reads it as kind <code>fork</code></p>
+<p>of that source, from the <code>forked</code> record on, so a fork with no turn of its own</p>
+<p>is not a session yet (#5226).</p>
+<p>Media is out of scope.</p>
+<ul>
+<li><strong>MCP</strong>: <code>deja install kimi</code> writes <code>mcpServers.deja</code> into</li>
+</ul>
+<p><code>$KIMI_CODE_HOME/mcp.json</code> (common JSON shape, existing entries preserved).</p>
+<ul>
+<li><strong>Guidance</strong>: the shared skill at <code>~/.agents/skills/deja-history/SKILL.md</code>. Kimi Code 0.28.1 scans both that directory and <code>$KIMI_CODE_HOME/skills</code>, and deja writes the shared one so a machine with several harnesses keeps one copy. The <code>~/.kimi/skills/</code> in some write-ups belongs to <code>MoonshotAI/kimi-cli</code>, a different tool with the same name. An older deja wrote a block into the global <code>AGENTS.md</code>, which install now removes.</li>
+<li><strong>Auto-recall</strong>: <code>deja install kimi-auto</code> adds marked <code>[[hooks]]</code> entries to</li>
+</ul>
+<p><code>$KIMI_CODE_HOME/config.toml</code>: two <code>UserPromptSubmit</code> hooks</p>
+<p>(<code>deja hook-context --plain --once</code>, <code>deja hook-prompt --plain</code>) and a</p>
+<p><code>PreCompact</code> one, and a <code>SessionEnd</code> hook that runs <code>deja hook-session-end</code>. Measured on 0.28.1, <code>UserPromptSubmit</code> is the only event</p>
+<p>whose output reaches the model, and it takes plain stdout, so the session</p>
+<p>digest rides the first prompt rather than a session-start hook. Two more</p>
+<p>entries, <code>PostToolUse</code> and <code>PostToolUseFailure</code> on <code>Bash</code>, run</p>
+<p><code>deja hook-tool-after --defer</code>: Kimi does not wait for them and drops what</p>
+<p>they print, so the fix pair for a failed command is held and handed over</p>
+<p>once, on the session&#39;s next prompt. A <code>PreToolUse</code> entry on <code>^(Edit|Write)$</code></p>
+<p>runs <code>deja hook-tool --defer</code> the same way: Kimi waits for it but keeps only</p>
+<p>a block&#39;s reason (<code>runPreToolUse</code>), so the line about the edited file comes</p>
+<p>with the next prompt, after the edit.</p>
+<ul>
+<li><strong>Resume</strong>: <code>kimi --session &lt;sessionId&gt;</code>, run in the <code>workDir</code> from the</li>
+</ul>
+<p>session&#39;s <code>state.json</code>: Kimi refuses a session from any other directory</p>
+<p>(verified live on 0.28.1). A <code>workDir</code> that is gone is refused with a</p>
+<p>pointer to <code>deja show</code>.</p>
+<ul>
+<li><strong>Handoff</strong>: exec, <code>kimi -p</code>.</li>
+</ul>
+<p>Requested and specified by <a href="https://github.com/yearth">@yearth</a> in</p>
+<p><a href="https://github.com/vshulcz/deja-vu/issues/248">#248</a>.</p>
+<h2 id="status-line">Status line</h2>
+<p><code>deja install kimi-auto</code> adds <code>[status_line] command</code> to</p>
+<p><code>$KIMI_CODE_HOME/tui.toml</code>. Kimi Code has read it since 0.30.0; 0.28 and 0.29</p>
+<p>have no status line and ignore the file. Kimi pipes camelCase JSON with</p>
+<p><code>sessionId</code> and no transcript path, and drops an answer slower than 300 ms. A</p>
+<p>status line already set there is left alone. Rendered live on 2.1.1.</p>
+<p><strong>Last verified:</strong> 2026-07-28</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

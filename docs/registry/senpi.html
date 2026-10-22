@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Senpi stores its history — session format</title>
+<meta name="description" content="Where Senpi writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/senpi.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Senpi stores its history — session format">
+<meta property="og:description" content="Where Senpi writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/senpi.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Senpi stores its history — session format">
+<meta name="twitter:description" content="Where Senpi writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Senpi writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Senpi","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/senpi.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/senpi.html","name":"Senpi","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html" aria-current="page">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Senpi</h1>
+<ul>
+<li><strong>ID</strong>: <code>senpi</code></li>
+<li><strong>Store</strong>: <code>${SENPI_CODING_AGENT_DIR:-~/.senpi/agent}/sessions/&lt;encoded-cwd&gt;/&lt;session&gt;.jsonl</code></li>
+<li><strong>Read override</strong>: <code>DEJA_SENPI_ROOT</code> replaces the session root</li>
+<li><strong>Format</strong>: pi&#39;s session JSONL</li>
+<li><strong>Wiring</strong>: <code>deja install senpi</code> writes the server into <code>&lt;agent&gt;/mcp.json</code>;</li>
+</ul>
+<p><code>deja install senpi-auto</code> adds the extension at <code>&lt;agent&gt;/extensions/deja.ts</code>,</p>
+<p>which is both the injection point and the <code>/deja</code> command</p>
+<ul>
+<li><strong>Needs</strong>: nothing</li>
+</ul>
+<p>Senpi (OmO Native) descends from pi and kept its transcript envelope — a</p>
+<p><code>session</code> header line, then one <code>message</code> line per turn — so the parsing is</p>
+<p>pi&#39;s. The header&#39;s <code>cwd</code> names the project; the encoded directory is the</p>
+<p>fallback for a header without one, because Senpi folds every <code>/</code> into <code>-</code> and</p>
+<p><code>/tmp/my-app</code> and <code>/tmp/my/app</code> share a folder name (#4427).</p>
+<p>It kept the rest of pi too, which is what closes the harness: on a live install</p>
+<p>of <code>@code-yeongyu/senpi</code> every surface answered on senpi&#39;s own screen.</p>
+<ul>
+<li><code>&lt;agent&gt;/mcp.json</code> with <code>mcpServers</code> is loaded — its <code>/</code> palette lists</li>
+</ul>
+<p><code>mcp:deja:deja</code> with the server&#39;s own description.</p>
+<ul>
+<li>Skills load from the shared <code>~/.agents/skills</code> <strong>and</strong> from <code>&lt;agent&gt;/skills</code>.</li>
+</ul>
+<p>Both at once is a fault senpi announces: `&#34;deja-history&#34; collision: ✓</p>
+<p>&lt;agent&gt;/skills ✗ ~/.agents/skills (skipped)`. So deja writes the shared copy</p>
+<p>only, and takes the local one back out if an older install left it there.</p>
+<ul>
+<li>pi&#39;s extension loads unchanged, and with it the <code>/deja</code> command the palette</li>
+</ul>
+<p>shows as &#34;Search your own past coding sessions&#34;.</p>
+<ul>
+<li>A session started with that extension records what <code>deja hook-context</code></li>
+</ul>
+<p>returned as <code>{&#34;type&#34;:&#34;custom_message&#34;,&#34;customType&#34;:&#34;deja-recall&#34;}</code> — which is</p>
+<p>auto-recall arriving, in senpi&#39;s own transcript.</p>
+<ul>
+<li><code>--session &lt;path|id&gt;</code>, <code>--resume</code> and <code>--fork</code> are in its own help, so</li>
+</ul>
+<p><code>deja resume</code> prints <code>senpi --session &lt;id&gt;</code>, after a <code>cd</code> into the</p>
+<p>directory the header records: from anywhere else Senpi offers to fork the</p>
+<p>session into the current directory instead of reopening it (#4426).</p>
+<p><strong>Last verified:</strong> 2026-09-17</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li><strong>Commands run inside <code>eval</code> cells.</strong> With codemode loaded, Senpi&#39;s</li>
+</ul>
+<p>default, <code>bash</code>, <code>grep</code> and <code>powershell</code> leave the model&#39;s tool list and run</p>
+<p>only as <code>tool.bash(...)</code> in a cell. The transcript&#39;s call is then <code>eval</code></p>
+<p>with JS, and what ran is on the result, under</p>
+<p><code>details.toolCalls[].args</code>; deja reads the commands, files and edits from</p>
+<p>there, a <code>tool.powershell(...)</code> run as a command the way <code>tool.bash(...)</code></p>
+<p>is (#4523). The cell&#39;s text is a JSON string, <code>{&#34;text&#34;:&#34;…&#34;}</code>, and is read as the</p>
+<p>text it wraps (#4425).</p>
+<ul>
+<li><strong>Senpi&#39;s first run moves <code>~/.pi/agent</code> to <code>~/.senpi/agent</code></strong> — the whole</li>
+</ul>
+<p>directory, sessions and config and extensions, and it prints one line about</p>
+<p>it. So installing senpi on a machine that has pi leaves pi&#39;s own directory</p>
+<p>empty: pi then starts with no server, no extension and no history, while the</p>
+<p>same files answer as senpi&#39;s. Both rows are in <code>deja doctor</code> and the sessions</p>
+<p>stay searchable either way, but a pi user who wants both clients has to put</p>
+<p>pi&#39;s copy back.</p>
+<ul>
+<li>After such a migration the same transcripts can exist under both roots, and</li>
+</ul>
+<p>deja counts them per harness — so one session can appear twice in a result,</p>
+<p>once as pi and once as senpi.</p>
+<ul>
+<li><code>SENPI_CODING_AGENT_DIR</code> moves the whole agent directory, sessions included,</li>
+</ul>
+<p>so deja reads it: a machine that has already said where its sessions are</p>
+<p>should not have to say it twice in a second variable.</p>
+<ul>
+<li>Senpi&#39;s terminal extension keeps per-session state at</li>
+</ul>
+<p><code>sessions/&lt;project&gt;/extensions/terminal/&lt;id&gt;.json</code>. Those are not transcripts</p>
+<p>and deja does not count them as unread ones.</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

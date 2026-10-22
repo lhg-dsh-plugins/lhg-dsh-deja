@@ -1,0 +1,63 @@
+# @vshulcz/pi-deja
+
+English | [中文](https://github.com/vshulcz/deja-vu/blob/main/extensions/pi/docs/zh.md)
+
+pi remembers its own sessions. This extension answers the other question: what
+was done in the forty-one other coding agents on this machine — Claude Code,
+Codex, Cursor, Gemini, OpenClaw and Hermes among them — including the months
+before pi was installed.
+
+It runs [deja](https://github.com/vshulcz/deja-vu), a local Go binary that
+indexes the transcripts those agents already wrote to disk. No LLM, no
+embeddings, no network path besides a daily release check, which DEJA_OFFLINE=1 turns off.
+
+## Install
+
+```bash
+pi install npm:@vshulcz/pi-deja
+```
+
+The deja binary comes with the package; a deja you installed yourself
+(`brew install deja-vu`) always wins — see [Which binary](#which-binary).
+
+`deja install pi-auto` wires pi too, and is the shorter path if you have the
+CLI: it adds deja's MCP server and writes an extension of its own. When that
+extension is present this package stands down, so having both never injects
+twice — and the same for omp, whose extension the installer writes elsewhere.
+
+omp loads `pi.extensions` manifests and emits the same `before_agent_start`
+event, so `pi install`'s omp counterpart picks this package up as well.
+
+## What it does
+
+- **Session start**: a digest of what earlier sessions in this project decided
+  goes to the model with your first prompt; a notice says it arrived, and the
+  footer keeps deja's status line for the rest of the session.
+- **Every prompt** (`before_agent_start`): the prompt is matched against the
+  index and, when a past session answers it, that session goes to the model
+  with the prompt. Silence is the common case.
+- **After a failed command** (`tool_result` on `bash` or `powershell`): the repair this machine used the
+  last time that error came up goes in beside the error, in the same turn.
+- **Before an edit** (`tool_result` on a read, edit or write): what earlier
+  sessions decided about the file the agent just opened.
+- **After a compaction** (`session_compact`): the list of what this session was
+  already shown is cleared, so the recall it lost can come back, and deja reads
+  the turns the summary replaced so the next prompt carries what the agent was
+  in the middle of.
+- **When a session ends** (`session_shutdown`): its live stamp goes, so the next
+  session's recall can answer with it.
+- **`/deja <query>`**: search the history by hand.
+
+## Which binary
+
+In order: `DEJA_BIN`, `deja` on `PATH`, the usual install locations, and last
+the copy bundled through `@vshulcz/deja-vu`.
+
+## Privacy
+
+deja reads session files where the agents wrote them and builds a local index
+under `~/.cache/deja` (or `DEJA_INDEX_DIR`). Keys and tokens are stripped as
+the index is built, and without semantic search (`deja embed`) indexing and
+search make no network calls.
+
+Part of [deja-vu](https://github.com/vshulcz/deja-vu). MIT. Found it useful? [Star deja-vu on GitHub](https://github.com/vshulcz/deja-vu).

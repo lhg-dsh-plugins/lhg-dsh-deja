@@ -1,0 +1,79 @@
+# Continue
+
+- **ID**: `continue`
+- **Store**: `${CONTINUE_GLOBAL_DIR:-~/.continue}/sessions/<sessionId>.json`, one document per session, with `sessions.json` beside them as the list.
+- **Read override**: `DEJA_CONTINUE_ROOT` replaces the global directory (sessions are read from its `sessions/`)
+- **Format**: whole-file JSON rewritten on change; full re-parse per pass.
+
+Continue runs in VS Code and JetBrains, and its chat, agent and plan modes all
+write the same file. The session document holds `history[]`, each item a
+`message` with a `role` and a `content` that is either a string or an array of
+`{type, text}` parts; an assistant item that called tools carries them in
+`toolCallStates[]`. A compaction rewrites the file to the system message and
+one assistant item carrying `conversationSummary`: that item is indexed under
+the summary role, and since the turns before it are gone from disk, the index
+keeps the records it already held for them when the file comes back opening
+with a summary, through a rebuild too (#4795). `system` and `tool` roles are skipped — the first is
+configuration, and a tool's result arrives under the assistant item that asked
+for it. Each call in `toolCallStates[]` is read off its `parsedArgs`: `Bash`
+and `run_terminal_command` give a command, the file tools their `filepath`
+(`file_path` for the CLI's `Edit`), and the editors the replaced and written
+sides — `old_string`/`new_string`, `edits[]`, `content`/`contents`, and the
+`changes` of `edit_existing_file`, without the `// ... existing code ...`
+lines that stand for what was left alone (#4529). A call whose status is
+anything but `done` (errored, canceled, or still waiting on approval) keeps its path and output but no edit or written lines. A command carries
+`→ exit N` where Continue wrote the code: the CLI's errored `Bash` output
+"Error executing tool Bash: Error (exit code N): …", and the IDE's output
+`status` "Command failed with exit code N". A clean run gets no code: the CLI
+resolves a non-zero exit with empty stderr as done, and the IDE says "Command
+completed" for a process a signal ended (#4530).
+
+Nothing in the file carries a timestamp. `sessions.json` records `dateCreated`
+and `workspaceDirectory` per session, so that date is the session's start (the
+file's mtime when the list has no entry); turns are laid out one second apart
+from the start, which is enough to order them within the session. The project name comes from
+`workspaceDirectory`, falling back to the list entry when the document omits it;
+a `file://` URI there is decoded first (#4461).
+
+Shape verified against Continue's own types (`core/index.d.ts`: `Session`,
+`ChatHistoryItem`, `ChatMessage`) and `core/util/paths.ts`; a live-store
+validation is still welcome.
+
+- **MCP**: `deja install continue` adds the server to `mcpServers:` in
+  `${CONTINUE_GLOBAL_DIR:-~/.continue}/config.yaml` — a list of mappings, not the keyed object other
+  harnesses use, so the entry is found again by its `name`. Verified on
+  @continuedev/cli 1.5.47 against a recording endpoint: the `deja` tool is in
+  the tool list of every request, and a call came back with the seeded decision
+  in the bytes Continue sent next. The TUI header lists it under `MCP Servers`.
+- **Skill**: the same install writes `~/.continue/skills/deja-history/SKILL.md`.
+  Continue reads skills from its global folder and from `<workspace>/.claude/skills`,
+  and names each one in the `Skills` tool's own description — so it is in front
+  of the model on every turn, which is what makes recall arrive unasked.
+- **Command**: `prompts:` in the same config carries `/deja`. Continue expands
+  slash commands in its TUI; in `-p` headless mode the text goes through
+  verbatim, so the entry is written but its expansion is unverified here.
+- **Auto-recall**: none yet. The CLI carries a Claude-shaped hooks system —
+  Claude's own event set, `additionalContext`, settings read from
+  `~/.continue/settings.json` — and nothing fires it in 1.5.47: hooks written
+  for every event loaded (its own log says "Hooks loaded: 8 handler(s) across 8
+  event type(s)") and no handler ran, while the same run's tool call went
+  through. It becomes work the day a release fires them.
+- **Resume**: `cn --fork <sessionId>`, which `deja resume` prints. It takes any
+  id in the store this reader walks — `historyManager.load` opens
+  `<sessions>/<id>.json` (`core/util/history.ts`) — so the earlier reading
+  here, that nothing accepts an arbitrary id, was wrong. What it does differ
+  in is the ending: the flag forks, so the history comes back under a new
+  session id rather than continuing the old one, and deja says so on stderr
+  beside the command. The fork runs its tools in the current directory, so
+  the command goes with a `cd` into the session's `workspaceDirectory` (#4375),
+  or, with that gone, a note that the fork runs where you are (#4460).
+  `cn --resume` remains the last-session shortcut, and
+  the editor reopens one from its history view.
+- **Handoff**: exec, `cn <prompt>` opens an interactive session with it.
+
+Costs on that version, measured from the recorded requests: deja's tool schema
+is 3,112 bytes of the 10 KB tool block in every request, the skill adds 700
+bytes to the `Skills` tool's description, and a recall that answers adds 1,384
+bytes to the turn that asked.
+
+**Last verified:** 2026-09-07

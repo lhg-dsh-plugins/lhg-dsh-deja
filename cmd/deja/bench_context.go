@@ -1,0 +1,317 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/bench"
+	"github.com/vshulcz/deja-vu/internal/index"
+	"github.com/vshulcz/deja-vu/internal/model"
+	"github.com/vshulcz/deja-vu/internal/search"
+)
+
+type contextArmReport struct {
+	MedianTokens   float64 `json:"median_tokens"`
+	P10Tokens      float64 `json:"p10_tokens"`
+	P90Tokens      float64 `json:"p90_tokens"`
+	MedianCoverage float64 `json:"median_coverage"`
+	NegativeMedian float64 `json:"negative_median_tokens"`
+}
+
+type contextReport struct {
+	CorpusHash string                      `json:"corpus_hash"`
+	Seed       int64                       `json:"seed"`
+	Chains     int                         `json:"chains"`
+	Negatives  int                         `json:"negative_controls"`
+	Arms       map[string]contextArmReport `json:"arms"`
+	// The same chains re-filed as one long session each: same facts, same
+	// bulk, one session instead of fourteen. Reported apart so the rows above
+	// keep meaning what they have always meant.
+	MarathonChains int                         `json:"marathon_chains"`
+	MarathonHash   string                      `json:"marathon_corpus_hash"`
+	MarathonArms   map[string]contextArmReport `json:"marathon_arms"`
+}
+
+type contextMeasurement struct {
+	tokens   int
+	coverage float64
+	negative bool
+}
+
+// parseBenchArgs reads the flags every bench subcommand documents. It is
+// shared because two of the three used to disagree with `deja help`: recall
+// rejected --seed outright and prompt accepted it and ran seed 1 anyway, so
+// the one knob that makes a benchmark reproducible worked on one subcommand.
+func parseBenchArgs(sub string, args []string) (jsonOutput bool, seed int64, err error) {
+	seed = bench.Seed
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--json":
+			jsonOutput = true
+		case "--seed":
+			if i+1 >= len(args) {
+				return false, 0, fmt.Errorf("bench %s: --seed requires a number", sub)
+			}
+			value, parseErr := strconv.ParseInt(args[i+1], 10, 64)
+			if parseErr != nil {
+				return false, 0, fmt.Errorf("bench %s: --seed needs a whole number, got %q", sub, args[i+1])
+			}
+			seed = value
+			i++
+		default:
+			return false, 0, fmt.Errorf("bench: usage: bench %s [--json] [--seed N]", sub)
+		}
+	}
+	return jsonOutput, seed, nil
+}
+
+func runBenchContext(args []string) error {
+	jsonOutput, seed, err := parseBenchArgs("context", args)
+	if err != nil {
+		return err
+	}
+	report, err := measureContext(seed)
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return json.NewEncoder(os.Stdout).Encode(report)
+	}
+	printContextReport(os.Stdout, report)
+	return nil
+}
+
+func measureContext(seed int64) (contextReport, error) {
+	corpus := bench.GenerateContext(seed)
+	arms, err := measureContextCorpus(corpus)
+	if err != nil {
+		return contextReport{}, err
+	}
+	// Built and indexed on its own, because it is the same chains: one index
+	// holding both would let a marathon page answer with the short sessions it
+	// was folded from.
+	marathon := bench.GenerateContextMarathon(seed)
+	marathonArms, err := measureContextCorpus(marathon)
+	if err != nil {
+		return contextReport{}, err
+	}
+	return contextReport{
+		CorpusHash: corpus.Hash, Seed: seed,
+		Chains: bench.ContextChainCount, Negatives: bench.ContextNegativeCount, Arms: arms,
+		MarathonChains: len(marathon.Chains), MarathonHash: marathon.Hash, MarathonArms: marathonArms,
+	}, nil
+}
+
+func measureContextCorpus(corpus bench.ContextCorpus) (map[string]contextArmReport, error) {
+	root, err := benchmarkTempDir()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { releaseBenchTempDir(root) }()
+	claudeRoot := filepath.Join(root, "claude")
+	indexDir := filepath.Join(root, "index.db")
+	var sessions []model.Session
+	for _, chain := range corpus.Chains {
+		sessions = append(sessions, chain.Sessions...)
+	}
+	if err := writeBenchCorpus(claudeRoot, sessions); err != nil {
+		return nil, err
+	}
+	restore := isolateBenchEnv(root, claudeRoot, indexDir)
+	defer restore()
+	if err := index.EnsureForSearch(indexDir, search.Options{Query: "", All: true}, true, io.Discard); err != nil {
+		return nil, fmt.Errorf("build context benchmark index: %w", err)
+	}
+	measurements := map[string][]contextMeasurement{
+		"deja-recall": nil, "deja-digest": nil, "deja-block": nil,
+		"full-history": nil, "naive-grep": nil, "cold": nil,
+	}
+	for _, chain := range corpus.Chains {
+		digest, block, err := contextDejaParts(indexDir, chain)
+		if err != nil {
+			return nil, err
+		}
+		deja := digest + block
+		full := contextFullHistory(chain)
+		naive, err := contextNaiveGrep(claudeRoot, chain)
+		if err != nil {
+			return nil, err
+		}
+		// The two halves are scored on their own as well as together. Scored
+		// only as a union, the column could not move: each surface carries the
+		// chain's facts by itself, so deleting either one left coverage at
+		// 1.00 and only deleting both showed anything (#2931).
+		for name, text := range map[string]string{
+			"deja-recall": deja, "deja-digest": digest, "deja-block": block,
+			"full-history": full, "naive-grep": naive, "cold": "",
+		} {
+			measurements[name] = append(measurements[name], contextMeasurement{tokens: len(text) / 4, coverage: contextCoverage(text, chain.Facts), negative: chain.Negative})
+		}
+	}
+	arms := map[string]contextArmReport{}
+	for name, values := range measurements {
+		arms[name] = summarizeContext(values)
+	}
+	return arms, nil
+}
+
+// contextDejaParts returns the two surfaces deja puts in front of an agent
+// separately: the per-hit context digest, and the session-start block. Their
+// concatenation is what an agent sees; scoring them apart is what makes a
+// regression in either attributable (#2931).
+func contextDejaParts(dir string, chain bench.ContextChain) (digest, block string, err error) {
+	result, err := index.SearchWithRecoveryDetailed(dir, search.Options{Query: strings.Join(chain.Terms, " "), All: true}, io.Discard)
+	if err != nil {
+		return "", "", fmt.Errorf("context query %q: %w", chain.Task, err)
+	}
+	hits, err := search.Run(result.Sessions, search.Options{Query: strings.Join(chain.Terms, " "), All: true})
+	if err != nil {
+		return "", "", err
+	}
+	var b bytes.Buffer
+	ss := make([]model.Session, 0, len(hits))
+	for _, hit := range hits {
+		if hit.Session.ID == chain.ID+"-task" {
+			continue
+		}
+		ss = append(ss, hit.Session)
+		search.PrintContext(&b, hit.Session, strings.Join(chain.Terms, " "))
+	}
+	// The second is the same digest builder the SessionStart hook uses.
+	return b.String(), search.BuildAutoRecall(ss, search.AutoRecallOptions{Mode: search.RecallAggressive}).Text, nil
+}
+
+func contextFullHistory(chain bench.ContextChain) string {
+	var b strings.Builder
+	for _, s := range chain.Sessions[:len(chain.Sessions)-1] {
+		for _, m := range s.Messages {
+			fmt.Fprintf(&b, "%s: %s\n", m.Role, m.Text)
+		}
+	}
+	return b.String()
+}
+
+func contextNaiveGrep(root string, chain bench.ContextChain) (string, error) {
+	var b strings.Builder
+	for _, s := range chain.Sessions[:len(chain.Sessions)-1] {
+		path := filepath.Join(root, s.Project, s.ID+".jsonl")
+		f, err := os.Open(path)
+		if err != nil {
+			return "", err
+		}
+		var lines []string
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		closeErr := f.Close()
+		if err := scanner.Err(); err != nil {
+			return "", err
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+		for i, line := range lines {
+			matched := true
+			for _, term := range chain.Terms {
+				if !strings.Contains(strings.ToLower(line), strings.ToLower(term)) {
+					matched = false
+				}
+			}
+			if matched {
+				start, end := i-1, i+2
+				if start < 0 {
+					start = 0
+				}
+				if end > len(lines) {
+					end = len(lines)
+				}
+				for _, contextLine := range lines[start:end] {
+					b.WriteString(contextLine)
+					b.WriteByte('\n')
+				}
+			}
+		}
+	}
+	return b.String(), nil
+}
+
+func contextCoverage(text string, facts []string) float64 {
+	if len(facts) == 0 {
+		return 0
+	}
+	covered := 0
+	for _, fact := range facts {
+		if strings.Contains(text, fact) {
+			covered++
+		}
+	}
+	return float64(covered) / float64(len(facts))
+}
+
+func summarizeContext(values []contextMeasurement) contextArmReport {
+	tokens, coverage, negative := []int{}, []float64{}, []int{}
+	for _, value := range values {
+		if value.negative {
+			negative = append(negative, value.tokens)
+		} else {
+			tokens = append(tokens, value.tokens)
+			coverage = append(coverage, value.coverage)
+		}
+	}
+	sort.Ints(tokens)
+	sort.Ints(negative)
+	sort.Float64s(coverage)
+	return contextArmReport{MedianTokens: percentileInt(tokens, 50), P10Tokens: percentileInt(tokens, 10), P90Tokens: percentileInt(tokens, 90), MedianCoverage: percentileFloat(coverage, 50), NegativeMedian: percentileInt(negative, 50)}
+}
+
+func percentileInt(values []int, p int) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	return float64(values[(len(values)-1)*p/100])
+}
+func percentileFloat(values []float64, p int) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	return values[(len(values)-1)*p/100]
+}
+
+func printContextReport(w io.Writer, report contextReport) {
+	fmt.Fprintf(w, "deja bench context\nchains: %d, negative controls: %d\n", report.Chains, report.Negatives)
+	fmt.Fprintln(w, "arm           median tokens  p10-p90       median coverage  negative median")
+	for _, name := range []string{"deja-recall", "deja-digest", "deja-block", "full-history", "naive-grep", "cold"} {
+		r := report.Arms[name]
+		span := fmt.Sprintf("%.0f-%.0f", r.P10Tokens, r.P90Tokens)
+		fmt.Fprintf(w, "%-13s %-14.0f %-13s %-16.2f %.0f\n", name, r.MedianTokens, span, r.MedianCoverage, r.NegativeMedian)
+	}
+	// deja-recall is the union of the two surfaces below it, and each of them
+	// reaches the chain's facts on its own — so its coverage cannot fall until
+	// both are broken. Read the two halves for a regression; the union is a
+	// floor (#2931).
+	fmt.Fprintln(w, "deja-recall is the union of the two rows under it: its coverage only falls when both do — read those.")
+	if len(report.MarathonArms) == 0 {
+		return
+	}
+	// The same chains with the same facts, filed as one long session each.
+	// Printed apart from the rows above because it is the same content: the
+	// two tables differ only in how the history is partitioned, which is the
+	// one thing a store on a real machine does differently from every corpus
+	// in this benchmark.
+	fmt.Fprintf(w, "\nsame chains, one session each instead of %d: %d chains\n", bench.ContextPriorCount, report.MarathonChains)
+	fmt.Fprintln(w, "arm           median tokens  p10-p90       median coverage  negative median")
+	for _, name := range []string{"deja-recall", "deja-digest", "deja-block", "full-history", "naive-grep", "cold"} {
+		r := report.MarathonArms[name]
+		span := fmt.Sprintf("%.0f-%.0f", r.P10Tokens, r.P90Tokens)
+		fmt.Fprintf(w, "%-13s %-14.0f %-13s %-16.2f %.0f\n", name, r.MedianTokens, span, r.MedianCoverage, r.NegativeMedian)
+	}
+}

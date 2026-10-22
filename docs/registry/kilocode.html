@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Kilo Code stores its history — session format</title>
+<meta name="description" content="Where Kilo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/registry/kilocode.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Where Kilo Code stores its history — session format">
+<meta property="og:description" content="Where Kilo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/registry/kilocode.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta name="twitter:title" content="Where Kilo Code stores its history — session format">
+<meta name="twitter:description" content="Where Kilo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","author":{"@type":"Person","name":"vshulcz"},"description":"Where Kilo Code writes its conversation history on disk, what the files contain, the quirks deja found in them, and when the format was last verified against a real store.","headline":"Kilo Code","inLanguage":"en","isPartOf":{"@type":"WebSite","name":"deja-vu","url":"https://vshulcz.github.io/deja-vu/"},"publisher":{"@type":"Person","name":"vshulcz"},"url":"https://vshulcz.github.io/deja-vu/registry/kilocode.html"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/","name":"deja-vu","position":1},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/guide/harnesses.html","name":"Harnesses","position":2},{"@type":"ListItem","item":"https://vshulcz.github.io/deja-vu/registry/kilocode.html","name":"Kilo Code","position":3}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="../guide/getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">&larr; deja-vu</a><div class="grp">Guide</div><a href="../guide/getting-started.html">Getting started</a><a href="../guide/harnesses.html">Harnesses</a><div class="grp">Session formats</div><a href="README.html">All formats</a><a href="aider.html">aider</a><a href="amp.html">Amp</a><a href="antigravity.html">Antigravity</a><a href="cherrystudio.html">Cherry Studio</a><a href="claude-code.html">Claude Code</a><a href="cline.html">Cline</a><a href="codebuddy.html">CodeBuddy Code</a><a href="codewhale.html">CodeWhale</a><a href="codex.html">Codex CLI</a><a href="commandcode.html">Command Code</a><a href="continue.html">Continue</a><a href="copilot.html">Copilot CLI</a><a href="crush.html">Crush</a><a href="cursor.html">Cursor</a><a href="deepseek.html">DeepSeek Harness</a><a href="devin.html">Devin CLI</a><a href="gjc.html">gajae-code</a><a href="gemini.html">Gemini CLI</a><a href="goose.html">Goose</a><a href="grok.html">Grok Build</a><a href="hermes.html">Hermes</a><a href="jetbrains.html">JetBrains AI Assistant</a><a href="junie.html">Junie</a><a href="kilocode.html" aria-current="page">Kilo Code</a><a href="kimchi.html">Kimchi Coding</a><a href="kimi.html">Kimi Code</a><a href="kiro.html">Kiro</a><a href="muse.html">Muse Code</a><a href="omp.html">omp (Oh My Pi)</a><a href="openclaw.html">OpenClaw</a><a href="opencode.html">opencode</a><a href="pi.html">pi</a><a href="prime.html">prime-agent (PrimeIntellect)</a><a href="qwen.html">Qwen Code</a><a href="reasonix.html">Reasonix</a><a href="roo.html">Roo Code</a><a href="senpi.html">Senpi</a><a href="trae.html">TRAE CLI</a><a href="copilot-chat.html">VS Code Copilot Chat</a><a href="windsurf.html">Windsurf / Devin Desktop</a><a href="zcode.html">ZCode</a><a href="zed.html">Zed</a></aside>
+<article>
+<h1>Kilo Code</h1>
+<ul>
+<li><strong>ID</strong>: <code>kilocode</code></li>
+<li><strong>Store (extension)</strong>: <code>&lt;vscode-globalStorage&gt;/kilocode.kilo-code/tasks/&lt;taskId&gt;/api_conversation_history.json</code> with <code>history_item.json</code> beside it — the Roo task shape, read across the same hosts Roo is (Code, Code - Insiders, VSCodium, Cursor, Windsurf)</li>
+<li><strong>Store (CLI)</strong>: <code>~/.local/share/kilo/kilo.db</code>, or <code>$XDG_DATA_HOME/kilo/kilo.db</code> where that is set — OpenCode&#39;s message schema</li>
+<li><strong>Read overrides</strong>: <code>DEJA_KILO_ROOTS</code> replaces the globalStorage list; <code>DEJA_KILO_DB</code> names the database</li>
+<li><strong>Format</strong>: task JSON (Cline lineage) and SQLite (OpenCode schema)</li>
+<li><strong>Needs</strong>: <code>sqlite3</code> for the CLI store; the task files need nothing</li>
+</ul>
+<ul>
+<li><strong>Wiring</strong>: <code>deja install kilocode</code> writes the extension&#39;s</li>
+</ul>
+<p><code>&lt;globalStorage&gt;/kilocode.kilo-code/settings/mcp_settings.json</code> for every host</p>
+<p>that has it, <strong>and</strong> the CLI&#39;s own <code>&lt;config&gt;/kilo/kilo.jsonc</code> (or <code>kilo.json</code> when that is the file present) — Kilo vendors</p>
+<p>OpenCode, so the CLI takes OpenCode&#39;s <code>mcp</code> block. <code>kilo mcp list</code> prints</p>
+<p><code>✓ deja connected</code> once it is there. The skill goes in</p>
+<p><code>~/.kilocode/skills/deja-history/SKILL.md</code> and the command in</p>
+<p><code>&lt;config&gt;/kilo/commands/deja.md</code>.</p>
+<ul>
+<li><strong>Auto-recall</strong>: <code>deja install kilocode-auto</code> does all of the above and adds</li>
+</ul>
+<p><code>&lt;config&gt;/kilo/plugins/deja.js</code>. Kilo CLI kept opencode&#39;s plugin loader (it</p>
+<p>globs <code>{plugin,plugins}/*.{ts,js}</code> in each config directory), so the file is</p>
+<p>opencode-auto&#39;s plugin: the session digest folded into the system prompt,</p>
+<p>per-prompt recall, the file and failed-command lines after a tool, and the</p>
+<p>session-end stamp. It is always the opencode 1.x shape, whichever opencode is</p>
+<p>on PATH: Kilo 7.8.3 refuses the 2.x default export with &#34;must default export</p>
+<p>an object with server()&#34; (#4398).</p>
+<p>Verified on <code>@kilocode/cli</code> 7.7.3. A real <code>kilo run</code> session landed in</p>
+<p><code>~/.local/share/kilo/kilo.db</code>, deja indexed it and recall returned the phrase</p>
+<p>that was typed; <code>deja resume</code> printed <code>kilo -s &lt;id&gt;</code> and running it brought the</p>
+<p>session back with that turn on screen. <code>kilo mcp list</code> prints `✓ deja</p>
+<p>connected`, and all four surfaces are in its own palette at once:</p>
+<pre><code>/deja                 Search this machine&#39;s past AI coding sessions (deja-vu)
+/deja:deja:mcp        Search this machine&#39;s past coding sessions — …
+/deja-search:skill    deja-vu memory — search the user&#39;s past AI coding sessions …
+/deja-history:skill   Search the user&#39;s past AI coding sessions. Use when …</code></pre>
+<p>Kilo namespaces its palette by kind — <code>:mcp</code> for a server&#39;s prompt, <code>:skill</code></p>
+<p>for a skill — so the command file, the server and both skills coexist under the</p>
+<p>same word. Gemini&#39;s flat namespace is the opposite case and needed the command</p>
+<p>file dropped there (#3665).</p>
+<p>Verified on <code>@kilocode/cli</code> 7.8.3 with <code>deja install kilocode-auto</code>: a `kilo</p>
+<p>run` in a project with one earlier Kilo session sent the model a system</p>
+<p>message opening with the <code>&lt;deja-recall&gt;</code> digest naming that session, and the</p>
+<p>reply answered from it.</p>
+<p><strong>Last verified:</strong> 2026-10-07</p>
+<p>Kilo Code is a Roo Code fork that vendors OpenCode — <code>packages/opencode</code> is</p>
+<p>1,780 files inside the Kilo repository — and <code>packages/kilo-vscode/src/legacy-migration</code></p>
+<p>reads the task directory to import it into the database. So the task files are</p>
+<p>the history of anyone who used Kilo before that migration, and the database is</p>
+<p>where it goes afterwards; deja reads both and neither needed a new parser.</p>
+<p>The extension id is <code>kilocode.kilo-code</code>, confirmed from</p>
+<p><code>packages/kilo-vscode/package.json</code> (<code>publisher: kilocode</code>, <code>name: kilo-code</code>).</p>
+<p>Task JSON: one document per task, an array of <code>{role, content}</code> turns in Cline&#39;s</p>
+<p>shape, with the user&#39;s first turn wrapped in <code>&lt;task&gt;…&lt;/task&gt;</code>. <code>history_item.json</code></p>
+<p>supplies the id, the millisecond timestamp and the workspace, which is what names</p>
+<p>the project; without it the task&#39;s directory mtime is the base time. A</p>
+<p><code>history_item.json</code> written or changed after the transcript re-reads the task</p>
+<p>(#4446). Tool calls are read as Roo&#39;s are (see <a href="roo.html">Roo Code</a>), plus Kilo</p>
+<p>Code&#39;s own: <code>search_and_replace</code> with an <code>operations</code> list of literal</p>
+<p><code>search</code>/<code>replace</code> pairs, <code>fast_edit_file</code> with <code>target_file</code> and a</p>
+<p><code>code_edit</code> whose <code>// ... existing code ...</code> lines are dropped before its</p>
+<p>written lines are hashed, <code>write_file</code> (the alias of <code>write_to_file</code> kept in</p>
+<p>history), and <code>delete_file</code> and <code>generate_image</code>, which name a file (#4535).</p>
+<p>SQLite: <code>session</code> joined to <code>message</code> and <code>part</code>, exactly as OpenCode writes it —</p>
+<p>see <a href="opencode.html">OpenCode</a> for the field-by-field description. Kilo CLI adds</p>
+<p>tools of its own, read beside OpenCode&#39;s: <code>background_process</code> gives a command</p>
+<p>from <code>command</code> when its <code>action</code> is <code>start</code> or <code>monitor</code> (the other actions</p>
+<p>name a process by <code>id</code>), <code>notebook_read</code> a file from <code>path</code>, and</p>
+<p><code>notebook_edit</code> a file from <code>path</code> and written lines from <code>source</code> when its</p>
+<p><code>action</code> is <code>insert</code> or <code>replace</code>. A notebook path relative to the session</p>
+<p>directory is put under it (#4534).</p>
+<h2 id="status-line">Status line</h2>
+<p><code>deja install kilocode-auto</code> adds the opencode 1.x TUI plugin to Kilo CLI:</p>
+<p><code>plugins/deja-status.tsx</code> in <code>~/.config/kilo</code>, listed in its <code>tui.json</code>. It</p>
+<p>runs <code>deja statusline</code> every 10 seconds and when the session changes, and</p>
+<p>shows the line in the sidebar, the prompt row and the home screen. Rendered</p>
+<p>live on Kilo CLI 7.8.8. The VS Code extension has no such surface.</p>
+<h2 id="known-quirks-and-drift">Known quirks and drift</h2>
+<ul>
+<li>Resume: <code>kilo -s &lt;id&gt;</code> for a session from the CLI store — &#34;session id to</li>
+</ul>
+<p>continue&#34; in Kilo&#39;s own CLI options (<code>packages/opencode/src/cli/cmd/tui.ts</code>).</p>
+<p>An editor task is refused with the reason: those live under the host&#39;s</p>
+<p>globalStorage and reopen from Kilo&#39;s history view, the same split Roo has.</p>
+<ul>
+<li>Two stores for one harness, and a session can exist in both if the migration</li>
+</ul>
+<p>has run: the task files are not deleted by it.</p>
+<ul>
+<li>A Roo task and a Kilo task are the same file name in sibling directories under</li>
+</ul>
+<p>one globalStorage, so the reader matches on the extension id rather than on the</p>
+<p>file.</p>
+<ul>
+<li>tokscale&#39;s Kilo reader notes that an assistant turn whose payload carries no</li>
+</ul>
+<p><code>time</code> object falls back to the file&#39;s mtime. deja sorts by time rather than</p>
+<p>counting tokens, so the turn still needs a time; the OpenCode path already</p>
+<p>falls back the same way.</p>
+<ul>
+<li>The slash command is real after all: Kilo&#39;s own workflows doc puts global</li>
+</ul>
+<p>commands in <code>~/.config/kilo/commands/</code>, project ones in <code>.kilo/commands/</code>,</p>
+<p>and a file named <code>deja.md</code> is invoked as <code>/deja</code>. <code>deja install kilocode</code></p>
+<p>writes the global one.</p>
+<ul>
+<li>Skill location: <code>~/.kilocode/skills/deja-history/SKILL.md</code> is where Kilo&#39;s</li>
+</ul>
+<p>own loader looks first (<code>packages/opencode/src/kilocode/paths.ts</code>). A machine</p>
+<p>with the CLI and no editor gets the CLI config, the skill and the command,</p>
+<p>and a note saying no editor host carried the extension.</p>
+<ul>
+<li>The extension gets the same plugin. Kilo 7.x&#39;s VS Code extension starts its</li>
+</ul>
+<p>bundled CLI as <code>kilo serve</code> and leaves <code>XDG_CONFIG_HOME</code> alone, so the server</p>
+<p>loads <code>&lt;config&gt;/kilo/plugins/deja.js</code> like a terminal session does. Measured</p>
+<p>on VSIX 7.8.7 with a stub model: the digest reached the system prompt and the</p>
+<p>per-prompt recall the user turn of a session the extension&#39;s server ran.</p>
+
+<hr>
+<p>deja reads this format and 41 others, and turns what it finds into memory your
+agents can search. See the <a href="../guide/harnesses.html">harness matrix</a> for what is
+wired where, or <a href="../guide/getting-started.html">install it</a> and search your own
+history.</p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

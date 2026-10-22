@@ -1,0 +1,659 @@
+// Package stats computes the corpus statistics behind `deja stats`:
+// per-harness/project counts, activity heatmap, and repeat-question metric.
+package stats
+
+import (
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/vshulcz/deja-vu/internal/cjkfold"
+	"github.com/vshulcz/deja-vu/internal/jsonout"
+	"github.com/vshulcz/deja-vu/internal/model"
+	"github.com/vshulcz/deja-vu/internal/redact"
+	"github.com/vshulcz/deja-vu/internal/search"
+	"github.com/vshulcz/deja-vu/internal/usage"
+)
+
+type Report struct {
+	SchemaVersion   int `json:"schema_version"`
+	TotalSessions   int `json:"total_sessions"`
+	TotalMessages   int `json:"total_messages"`
+	RepeatQuestions int `json:"repeat_questions,omitempty"`
+	// PolicyWithheld is how many indexed sessions the trust policy kept out of
+	// this report — the same field `search --json` and `last --json` carry, so
+	// a caller can tell a rule from an empty store (#1010).
+	PolicyWithheld int            `json:"policy_withheld,omitempty"`
+	Harnesses      []HarnessStats `json:"harnesses"`
+	TopProjects    []ProjectStats `json:"top_projects"`
+	Monthly        []MonthStats   `json:"monthly"`
+	Heatmap        HeatmapStats   `json:"-"` // card-only presentation data; kept out of the stable --json schema
+	// EmptiedByPolicy marks a report whose rows were all withheld by the
+	// trust policy, so the empty-index advice is not the right thing to print.
+	EmptiedByPolicy bool `json:"-"`
+	// HiddenBySettings is the reader's own tombstones and exclusions, when
+	// those are why the report is empty.
+	HiddenBySettings string `json:"-"`
+	// NarrowedBy names the filters that emptied a report over a store that is
+	// not empty, and OlderThanWindow is the extra line --since earns. Filled by
+	// the caller, which is where the flags the reader typed still exist.
+	NarrowedBy      string `json:"-"`
+	OlderThanWindow string `json:"-"`
+	// NoSuchRole is the line for a role the store holds none of at all, so a
+	// reader can tell "this harness records no edits" from "the filter missed".
+	NoSuchRole string `json:"-"`
+	// RecallMachineWide marks the recall figures as the whole machine's under
+	// a filter: the recall log does not record projects, so --project cannot
+	// narrow them, and the screen has to say so.
+	RecallMachineWide bool   `json:"-"`
+	Sparkline         string `json:"sparkline"`
+	// Omitted on an empty store rather than written as hollow objects.
+	DateRange    DateRangeStats `json:"date_range,omitzero"`
+	Longest      SessionStat    `json:"longest_session,omitzero"`
+	BusiestDay   DayStat        `json:"busiest_day,omitzero"`
+	Recall       usage.Summary  `json:"recall"`
+	WeekRecalls  int            `json:"week_recalls"`
+	WeekBytes    int            `json:"week_bytes"`
+	WeekInjected int            `json:"week_injected"`
+	HandoffsIn   int            `json:"handoffs_received"`
+	AgentCredits int            `json:"agent_credits"`
+	WeekCredits  int            `json:"week_agent_credits"`
+	// UsedNotCredited is the other half of the 2% (#3079): a reply that names
+	// a recalled session and does not say the line. An upper bound — see
+	// UsedNotCredited.
+	UsedNotCredited     int   `json:"used_not_credited"`
+	WeekUsedNotCredited int   `json:"week_used_not_credited"`
+	SidecarSize         int64 `json:"sidecar_size,omitempty"`
+	// Spans and SpanFiles are what `deja restore` can hand back: the exact
+	// bytes an agent replaced, which no other tool keeps. Filled by the
+	// caller, not by Build — replaced spans are deliberately kept out of
+	// ordinary retrieval (a span is the file's old contents, not a statement),
+	// so they never reach the sessions Build is given.
+	Spans     int `json:"spans,omitempty"`
+	SpanFiles int `json:"span_files,omitempty"`
+}
+
+type HarnessStats struct {
+	Harness  string `json:"harness"`
+	Sessions int    `json:"sessions"`
+	Messages int    `json:"messages"`
+}
+
+type ProjectStats struct {
+	Project  string `json:"project"`
+	Sessions int    `json:"sessions"`
+}
+
+type MonthStats struct {
+	Month    string `json:"month"`
+	Messages int    `json:"messages"`
+}
+
+// HeatmapStats is a GitHub-style trailing-year grid: one column per week,
+// seven rows (Sun–Sat). A day count of -1 means the cell falls outside the
+// covered range and is not drawn.
+type HeatmapStats struct {
+	Weeks  [][7]int    `json:"weeks"`
+	Max    int         `json:"max"`
+	Months []HeatMonth `json:"months"`
+}
+
+type HeatMonth struct {
+	Col   int    `json:"col"`
+	Label string `json:"label"`
+}
+
+type DateRangeStats struct {
+	Start string `json:"start,omitempty"`
+	End   string `json:"end,omitempty"`
+}
+
+type SessionStat struct {
+	ID       string `json:"id,omitempty"`
+	Harness  string `json:"harness,omitempty"`
+	Project  string `json:"project,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Messages int    `json:"messages"`
+}
+
+type DayStat struct {
+	Date     string `json:"date,omitempty"`
+	Messages int    `json:"messages"`
+}
+
+func Filter(ss []model.Session, o search.Options) []model.Session {
+	if o.Harness == "" && o.Project == "" && o.Since <= 0 && o.Role == "" {
+		return ss
+	}
+	cut := time.Time{}
+	if o.Since > 0 {
+		cut = time.Now().Add(-o.Since)
+	}
+	out := make([]model.Session, 0, len(ss))
+	for _, s := range ss {
+		if o.Harness != "" && s.Harness != o.Harness {
+			continue
+		}
+		if o.Project != "" && !strings.Contains(strings.ToLower(s.Project), strings.ToLower(o.Project)) {
+			continue
+		}
+		if !cut.IsZero() && s.Updated.Before(cut) {
+			continue
+		}
+		if o.Role != "" {
+			cp := s
+			cp.Messages = nil
+			for _, m := range s.Messages {
+				// The documented spelling, not only the stored one: `--role
+				// tool` is what help promises and "tool-output" is what is on
+				// disk, so a bare equality counted nothing (#3592).
+				if search.RoleMatches(m.Role, o.Role) {
+					cp.Messages = append(cp.Messages, m)
+				}
+			}
+			if len(cp.Messages) == 0 {
+				continue
+			}
+			s = cp
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func Build(ss []model.Session, now time.Time) Report {
+	byHarness := map[string]*HarnessStats{}
+	byProject := map[string]int{}
+	byDay := map[string]int{}
+	monthStart := firstMonth(now).AddDate(0, -11, 0)
+	months := make([]MonthStats, 12)
+	monthIndex := map[string]int{}
+	for i := range months {
+		m := monthStart.AddDate(0, i, 0)
+		label := m.Format("2006-01")
+		months[i] = MonthStats{Month: label}
+		monthIndex[label] = i
+	}
+
+	out := Report{SchemaVersion: jsonout.Version}
+	var minT, maxT time.Time
+	for _, s := range ss {
+		out.TotalSessions++
+		msgCount := len(s.Messages)
+		out.TotalMessages += msgCount
+		hs := byHarness[s.Harness]
+		if hs == nil {
+			hs = &HarnessStats{Harness: s.Harness}
+			byHarness[s.Harness] = hs
+		}
+		hs.Sessions++
+		hs.Messages += msgCount
+		project := s.Project
+		if project == "" {
+			project = "-"
+		}
+		byProject[project]++
+		if msgCount > out.Longest.Messages {
+			out.Longest = SessionStat{ID: s.ID, Harness: s.Harness, Project: project, Title: Title(s), Messages: msgCount}
+		}
+		considerTime(&minT, &maxT, s.Started)
+		considerTime(&minT, &maxT, s.Updated)
+		for _, m := range s.Messages {
+			t := m.Time
+			if t.IsZero() {
+				t = s.Updated
+			}
+			considerTime(&minT, &maxT, t)
+			if !t.IsZero() {
+				// The reader's zone, not the timestamp's: work done at 01:00
+				// local is stored as 22:00 UTC the day before, and taking the
+				// calendar date in UTC put it on the wrong day here while the
+				// brief — which renders locally since #767 — put it on the
+				// right one. Two screens of one tool disagreed by a day (#849).
+				t = t.In(now.Location())
+				day := t.Format("2006-01-02")
+				byDay[day]++
+				if i, ok := monthIndex[firstMonth(t).Format("2006-01")]; ok {
+					months[i].Messages++
+				}
+			}
+		}
+	}
+	out.Harnesses = make([]HarnessStats, 0, len(byHarness))
+	for _, hs := range byHarness {
+		out.Harnesses = append(out.Harnesses, *hs)
+	}
+	sort.Slice(out.Harnesses, func(i, j int) bool { return out.Harnesses[i].Harness < out.Harnesses[j].Harness })
+	// Built like Harnesses above rather than appended into a nil slice: on a
+	// fresh machine the nil marshalled as `null` while its sibling marshalled
+	// as `[]`, so a consumer iterating top_projects threw on the first run and
+	// worked ever after (#1649).
+	out.TopProjects = make([]ProjectStats, 0, len(byProject))
+	for project, count := range byProject {
+		out.TopProjects = append(out.TopProjects, ProjectStats{Project: project, Sessions: count})
+	}
+	sort.Slice(out.TopProjects, func(i, j int) bool {
+		if out.TopProjects[i].Sessions == out.TopProjects[j].Sessions {
+			return out.TopProjects[i].Project < out.TopProjects[j].Project
+		}
+		return out.TopProjects[i].Sessions > out.TopProjects[j].Sessions
+	})
+	if len(out.TopProjects) > 5 {
+		out.TopProjects = out.TopProjects[:5]
+	}
+	for day, count := range byDay {
+		if count > out.BusiestDay.Messages || (count == out.BusiestDay.Messages && (out.BusiestDay.Date == "" || day < out.BusiestDay.Date)) {
+			out.BusiestDay = DayStat{Date: day, Messages: count}
+		}
+	}
+	out.Monthly = months
+	out.Heatmap = buildHeatmap(byDay, now)
+	out.Sparkline = sparkline(months)
+	if !minT.IsZero() {
+		out.DateRange.Start = minT.In(now.Location()).Format("2006-01-02")
+		out.DateRange.End = maxT.In(now.Location()).Format("2006-01-02")
+	}
+	out.RepeatQuestions = RepeatQuestions(ss)
+	out.AgentCredits, out.WeekCredits = AgentCredits(ss, now)
+	out.UsedNotCredited, out.WeekUsedNotCredited = UsedNotCredited(ss, now)
+	for _, s := range ss {
+		for _, msg := range s.Messages {
+			if msg.Role != "user" {
+				continue
+			}
+			if strings.Contains(msg.Text, "picking up work handed off from a") {
+				out.HandoffsIn++
+			}
+			break // only the opening user turn marks a handoff-seeded session
+		}
+	}
+	return out
+}
+
+// buildHeatmap turns per-day message counts into a Sunday-aligned trailing-year
+// grid (~53 week columns) with month ticks, for the shareable stats card.
+func buildHeatmap(byDay map[string]int, now time.Time) HeatmapStats {
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	start := end.AddDate(0, 0, -370)
+	for start.Weekday() != time.Sunday {
+		start = start.AddDate(0, 0, -1)
+	}
+	var hm HeatmapStats
+	lastMonth := ""
+	for cur := start; !cur.After(end); {
+		var week [7]int
+		colDate := cur
+		for d := 0; d < 7; d++ {
+			if cur.After(end) {
+				week[d] = -1
+			} else {
+				c := byDay[cur.Format("2006-01-02")]
+				week[d] = c
+				if c > hm.Max {
+					hm.Max = c
+				}
+			}
+			cur = cur.AddDate(0, 0, 1)
+		}
+		if mon := colDate.Format("Jan"); mon != lastMonth {
+			hm.Months = append(hm.Months, HeatMonth{Col: len(hm.Weeks), Label: mon})
+			lastMonth = mon
+		}
+		hm.Weeks = append(hm.Weeks, week)
+	}
+	hm.Months = spaceMonthTicks(hm.Months)
+	return hm
+}
+
+// spaceMonthTicks drops a tick whose neighbour sits one column away. Columns
+// are 13px apart on the card and a three-letter label is wider than that, so
+// adjacent ticks overprint. The later one wins: the leading column is a partial
+// week and the month after it owns the rest of the strip.
+func spaceMonthTicks(in []HeatMonth) []HeatMonth {
+	out := make([]HeatMonth, 0, len(in))
+	for i, m := range in {
+		if i+1 < len(in) && in[i+1].Col-m.Col < 2 {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// Title is the one-line name of a session. It reaches a terminal, a shared
+// HTML page and a stats card, and it is transcript text, so it is stripped of
+// what a terminal acts on rather than prints.
+func Title(s model.Session) string {
+	if s.Title != "" && !Noise(s.Title) {
+		return redact.SafeForDisplay(s.Title)
+	}
+	for _, m := range s.Messages {
+		if m.Role == "user" && !Noise(m.Text) {
+			return TrimRunes(strings.Join(strings.Fields(redact.SafeForDisplay(m.Text)), " "), 60)
+		}
+	}
+	return ""
+}
+
+func Noise(s string) bool {
+	t := strings.TrimSpace(s)
+	for _, p := range []string{"<local-command", "<command-", "<task-notification", "<teammate-message", "<bash-", "Caveat:", "<system-reminder"} {
+		if strings.HasPrefix(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func considerTime(minT, maxT *time.Time, t time.Time) {
+	if t.IsZero() {
+		return
+	}
+	if minT.IsZero() || t.Before(*minT) {
+		*minT = t
+	}
+	if maxT.IsZero() || t.After(*maxT) {
+		*maxT = t
+	}
+}
+
+func firstMonth(t time.Time) time.Time {
+	y, m, _ := t.Date()
+	return time.Date(y, m, 1, 0, 0, 0, 0, t.Location())
+}
+
+func sparkline(months []MonthStats) string {
+	blocks := []rune("▁▂▃▄▅▆▇█")
+	maxMessages := 0
+	for _, m := range months {
+		if m.Messages > maxMessages {
+			maxMessages = m.Messages
+		}
+	}
+	var b strings.Builder
+	for _, m := range months {
+		idx := 0
+		if maxMessages > 0 && m.Messages > 0 {
+			idx = ((m.Messages - 1) * (len(blocks) - 1) / maxMessages) + 1
+		}
+		b.WriteRune(blocks[idx])
+	}
+	return b.String()
+}
+
+func ScaledBar(n, maxN, width int) int {
+	if n <= 0 || maxN <= 0 {
+		return 0
+	}
+	scaled := n * width / maxN
+	if scaled == 0 {
+		return 1
+	}
+	return scaled
+}
+
+func TrimRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n <= 1 {
+		return string(r[:n])
+	}
+	return string(r[:n-1]) + "…"
+}
+
+// AskedByAPerson keeps this count to questions a person asked. Without it the
+// number is mostly harness plumbing and instructions to an agent — "Use the X
+// tool", "Reply with only the raw JSON" — which repeat verbatim by
+// construction. The brief applies the same rule (index.FindAskedTwice), and two
+// screens reporting the same claim under different rules is worse than either.
+func AskedByAPerson(text string) bool {
+	t := strings.TrimSpace(text)
+	if Noise(t) || len([]rune(t)) > askedMaxRunes {
+		return false
+	}
+	for _, p := range []string{
+		"<deja-recall", "[Request interrupted", "The following tool was executed",
+		"This session is being continued", "Continue from where you left off",
+	} {
+		if strings.HasPrefix(t, p) {
+			return false
+		}
+	}
+	if strings.HasSuffix(t, "?") || strings.HasSuffix(t, "？") {
+		return true
+	}
+	fields := strings.Fields(t)
+	if len(fields) == 0 {
+		return false
+	}
+	switch strings.Trim(strings.ToLower(fields[0]), ",.:;!\"'") {
+	case "what", "why", "how", "when", "where", "which", "who", "whose",
+		"did", "does", "do", "is", "are", "was", "were", "can", "should", "would",
+		"что", "чем", "почему", "зачем", "как", "какой", "какая", "какие", "когда",
+		"где", "куда", "откуда", "сколько", "кто", "чей", "можно", "нужно", "надо":
+		return true
+	}
+	return false
+}
+
+// askedMaxRunes mirrors the index-side bound: past this it is a report or a
+// paste with a question mark somewhere in it.
+const askedMaxRunes = 240
+
+// RepeatQuestions is a corpus proxy because the usage sidecar does not store query text.
+func RepeatQuestions(ss []model.Session) int {
+	_, n := RepeatQuestionExample(ss)
+	return n
+}
+
+// RepeatQuestionExample is the count of questions asked in more than one
+// session, and the one asked most often, as the person typed it the last
+// time — the line the install opens with (#3064). "" and 0 when nothing
+// repeats.
+func RepeatQuestionExample(ss []model.Session) (example string, repeated int) {
+	counts, texts := askings(ss)
+	best := ""
+	for stem, n := range counts {
+		if n > 1 {
+			repeated++
+		}
+		// Ties go to the stem that sorts first, so the example is stable
+		// across runs on the same store.
+		if n > 1 && (best == "" || n > counts[best] || (n == counts[best] && stem < best)) {
+			best = stem
+		}
+	}
+	if best == "" {
+		return "", repeated
+	}
+	return TrimRunes(texts[best], 72), repeated
+}
+
+// QuestionSpread is how many distinct questions the corpus holds and how many
+// of them were asked in more than one session. RepeatQuestions is the second
+// number; the first is the denominator it needs — a repeat count without one
+// is a figure nobody can size ("91 repeats" of 200 questions and of 20,000 are
+// different stories).
+func QuestionSpread(ss []model.Session) (distinct, repeated int) {
+	counts, _ := askings(ss)
+	for _, n := range counts {
+		distinct++
+		if n > 1 {
+			repeated++
+		}
+	}
+	return distinct, repeated
+}
+
+// askings is how many sessions asked each question, and the question as it was
+// typed the last time. Exact stem match only: questionStemFor already folds
+// case and punctuation, and a pairwise similarity pass is quadratic in corpora
+// with tens of thousands of user messages.
+//
+// A resume, a fork or a share writes the conversation again under a new
+// session, carrying each message with the time it was first sent. The same
+// question at the same moment in two sessions is therefore one asking copied,
+// not the question asked twice, and counting it made a machine's own resumed
+// conversations the bulk of "questions you asked more than once" (#3711 found
+// the same on the brief's side). A message the transcript never stamped cannot
+// be told apart and counts as before.
+func askings(ss []model.Session) (counts map[string]int, texts map[string]string) {
+	counts = map[string]int{}
+	texts = map[string]string{}
+	sent := map[string]map[int64]bool{}
+	for _, s := range ss {
+		seen := map[string]bool{}
+		for _, m := range s.Messages {
+			if m.Role != "user" || !AskedByAPerson(m.Text) {
+				continue
+			}
+			stem := questionStemFor(m.Text)
+			// Short acknowledgements ("ok", "continue") repeat across every
+			// session; only substantial messages count as questions. Chinese,
+			// Japanese and Korean write no separator between words, so such a
+			// question is one field however much it asks and this figure read
+			// zero for anyone working in them (#1348) — their characters are the
+			// words, as the index counts them for the same purpose.
+			if stem == "" {
+				continue
+			}
+			if len(strings.Fields(stem)) < 4 && cjkfold.CountCJK(stem) < 4 {
+				continue
+			}
+			// Every stamped asking is recorded, including a second one in the
+			// same session, so a copy of that session matches on both.
+			copied := false
+			if !m.Time.IsZero() {
+				at := m.Time.UnixNano()
+				copied = sent[stem][at]
+				if sent[stem] == nil {
+					sent[stem] = map[int64]bool{}
+				}
+				sent[stem][at] = true
+			}
+			if copied || seen[stem] {
+				continue
+			}
+			seen[stem] = true
+			counts[stem]++
+			texts[stem] = strings.TrimSpace(m.Text)
+		}
+	}
+	return counts, texts
+}
+
+func questionStemFor(text string) string {
+	if Noise(text) {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(text) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte(' ')
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// CreditedAloud reports whether an assistant turn named deja's memory as the
+// source of what it says. The current shape is a "déjà vu" line carrying a
+// deja:<id> — the id is required because "déjà vu" alone is an ordinary
+// phrase, and a session discussing the tool says it without crediting
+// anything. "deja-vu recalled" is the shape agents were asked for before, and
+// the transcripts that say it are still on disk.
+func CreditedAloud(text string) bool {
+	if strings.Contains(text, "deja-vu recalled") {
+		return true
+	}
+	return strings.Contains(text, "deja:") && strings.Contains(strings.ToLower(text), "déjà vu")
+}
+
+// dejaSessionRef matches a session id named the way a recall block names one.
+// Eight characters of hex is the shortest prefix deja itself prints, and the
+// bound keeps an ordinary "deja:" in prose from counting as a reference.
+var dejaSessionRef = regexp.MustCompile(`deja:[0-9a-zA-Z][0-9a-zA-Z_.-]{7,}`)
+
+// CreditedRefs is the session ids a credit line names: the deja:<id> on a
+// line that also says "déjà vu", each once. An id quoted in prose elsewhere in
+// the turn is not credited, and the older "deja-vu recalled" shape names no
+// id, so it gives none.
+func CreditedRefs(text string) []string {
+	if !strings.Contains(text, "deja:") {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(strings.ToLower(line), "déjà vu") {
+			continue
+		}
+		for _, m := range dejaSessionRef.FindAllString(line, -1) {
+			ref := strings.TrimRight(strings.TrimPrefix(m, "deja:"), ".-_")
+			if len(ref) >= 8 && !seen[ref] {
+				seen[ref] = true
+				out = append(out, ref)
+			}
+		}
+	}
+	return out
+}
+
+// UsedNotCredited counts assistant turns that name a recalled session without
+// saying the credit line — the second of the two things folded into the 2% in
+// #3079: injections the model used and did not credit, as opposed to
+// injections it rightly ignored.
+//
+// An upper bound, deliberately. The id is the evidence: a reply carrying
+// `deja:<id>` had the recall block in front of it. But a session *about* deja
+// quotes ids in prose, and on the machine that develops deja those turns are
+// counted here too. Read it as "at most this many", and the gap between it and
+// AgentCredits as the size of the question rather than as an answer.
+func UsedNotCredited(ss []model.Session, now time.Time) (total, week int) {
+	weekCut := usage.WeekCut(now)
+	for _, s := range ss {
+		for _, msg := range s.Messages {
+			if msg.Role != "assistant" || CreditedAloud(msg.Text) {
+				continue
+			}
+			if !dejaSessionRef.MatchString(msg.Text) {
+				continue
+			}
+			total++
+			if !msg.Time.IsZero() && msg.Time.After(weekCut) {
+				week++
+			}
+		}
+	}
+	return total, week
+}
+
+// AgentCredits counts, over the whole corpus and over the last week, the
+// assistant turns that named deja out loud.
+//
+// The attribution loop: agents saying "déjà vu: … (deja:<id>)" end up in the very
+// transcripts deja indexes, so the next pass can count how often memory was
+// credited out loud — a measured magic metric with zero telemetry. It is the
+// only signal that separates memory that was used from memory that was merely
+// served, so the impact panel reads it too (#1062).
+func AgentCredits(ss []model.Session, now time.Time) (total, week int) {
+	// The same week the status bar and the brief mean (#1920).
+	weekCut := usage.WeekCut(now)
+	for _, s := range ss {
+		for _, msg := range s.Messages {
+			if msg.Role != "assistant" || !CreditedAloud(msg.Text) {
+				continue
+			}
+			total++
+			if !msg.Time.IsZero() && msg.Time.After(weekCut) {
+				week++
+			}
+		}
+	}
+	return total, week
+}

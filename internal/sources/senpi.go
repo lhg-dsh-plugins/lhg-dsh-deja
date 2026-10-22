@@ -1,0 +1,156 @@
+package sources
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/vshulcz/deja-vu/internal/model"
+)
+
+// Senpi (OmO Native) and Kimchi Coding are both pi descendants: they kept the
+// JSONL envelope pi writes, so the shared parsePiShaped reader does the work
+// and this file is the two roots and their names.
+//
+//	Senpi:  ${SENPI_CODING_AGENT_DIR:-~/.senpi/agent}/sessions/<encoded-cwd>/*.jsonl
+//	Kimchi: ~/.config/kimchi/harness/sessions/--<encoded-cwd>--/*.jsonl
+//
+// Both keep the encoded project directory pi has, but the header line's cwd
+// names the project: the folder name is lossy, and a Kimchi file directly under
+// the root has none — the choice omp and prime-agent already make.
+
+// SenpiConfigDir is the agent directory. SENPI_CODING_AGENT_DIR moves it, and
+// moves it for deja: a machine that has said where its sessions are should not
+// have to say it twice.
+func SenpiConfigDir() string {
+	if p := EnvPath("SENPI_CODING_AGENT_DIR", ""); p != "" {
+		return expandTilde(p)
+	}
+	return filepath.Join(Home(), ".senpi", "agent")
+}
+
+// SenpiRoot is the session store root. DEJA_SENPI_ROOT wins, for tests and for
+// a store that is neither.
+func SenpiRoot() string {
+	return EnvPath("DEJA_SENPI_ROOT", filepath.Join(SenpiConfigDir(), "sessions"))
+}
+
+// SenpiSessionFiles lists the transcripts.
+func SenpiSessionFiles() []string {
+	return walkFiles(SenpiRoot(), func(p string) bool {
+		return strings.HasSuffix(p, ".jsonl")
+	})
+}
+
+func LoadSenpi() []model.Session { return parseFiles(SenpiSessionFiles(), ParseSenpiFile) }
+
+// ParseSenpiFile reads one transcript.
+func ParseSenpiFile(path string) ([]model.Session, error) {
+	return ParseSenpiFileFromOffset(path, 0)
+}
+
+// ParseSenpiFileFromOffset is the incremental read.
+func ParseSenpiFileFromOffset(path string, offset int64) ([]model.Session, error) {
+	// The header's cwd names the project, the folder only when it has none:
+	// Senpi folds every / into a -, so /tmp/my-app and /tmp/my/app share a
+	// folder name (#4427).
+	return parsePiShaped(path, offset, "senpi", senpiProject(path), true)
+}
+
+// senpiProject reads the name out of the encoded directory, for a header that
+// records no cwd.
+func senpiProject(path string) string {
+	dir := projectDir(SenpiRoot(), path)
+	if dir == "" || dir == SenpiRoot() {
+		return ""
+	}
+	return claudeProjectName(dir)
+}
+
+// KimchiConfigDir is Kimchi's harness directory, always under $HOME. Kimchi
+// 0.1.99 sets KIMCHI_CODING_AGENT_DIR itself at startup (src/entry.ts:46-51),
+// over whatever the shell had, and never reads XDG_CONFIG_HOME: a stand with
+// both set still wrote its sessions to ~/.config/kimchi/harness.
+func KimchiConfigDir() string {
+	return filepath.Join(Home(), ".config", "kimchi", "harness")
+}
+
+// KimchiRoot is the session store root. DEJA_KIMCHI_ROOT wins.
+func KimchiRoot() string {
+	return EnvPath("DEJA_KIMCHI_ROOT", filepath.Join(KimchiConfigDir(), "sessions"))
+}
+
+// KimchiSessionFiles lists the transcripts, sub-agent runs excluded unless
+// they are asked for.
+func KimchiSessionFiles() []string {
+	return walkFiles(KimchiRoot(), kimchiWanted)
+}
+
+// KimchiUnderRoot lets the registry claim a path for incremental ingest.
+func KimchiUnderRoot(p string) bool {
+	return underRoot(p, KimchiRoot(), ".jsonl") && kimchiWanted(p)
+}
+
+func kimchiWanted(p string) bool {
+	if !strings.HasSuffix(p, ".jsonl") {
+		return false
+	}
+	return SubagentsWhole() || !KimchiSubagentFile(p)
+}
+
+// KimchiSubagentFile reports whether a transcript is a run of Kimchi's `Agent`
+// tool. Kimchi writes those beside the parent in the same project directory,
+// so the path cannot tell; the run carries `parentSession` on its header and a
+// `kimchi:subagent-session` entry right after it. A fork has the first and not
+// the second, and is a session of its own. Skipped the way Claude Code's, Cursor's
+// and gjc's sub-agents are: a sub-agent's restatement of the task competes
+// with the parent for recall (#4401).
+func KimchiSubagentFile(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, 4096)
+	head, _ := r.ReadBytes('\n')
+	// Only a header naming a parent is worth a second line.
+	if !bytes.Contains(head, []byte(`"parentSession"`)) {
+		return false
+	}
+	next, _ := r.ReadBytes('\n')
+	var m struct {
+		Type       string `json:"type"`
+		CustomType string `json:"customType"`
+	}
+	if json.Unmarshal(next, &m) != nil {
+		return false
+	}
+	return m.Type == "custom" && m.CustomType == "kimchi:subagent-session"
+}
+
+func LoadKimchi() []model.Session { return parseFiles(KimchiSessionFiles(), ParseKimchiFile) }
+
+// ParseKimchiFile reads one transcript.
+func ParseKimchiFile(path string) ([]model.Session, error) {
+	return ParseKimchiFileFromOffset(path, 0)
+}
+
+// ParseKimchiFileFromOffset is the incremental read. Kimchi keeps a directory
+// per project the way pi does — `getDefaultSessionDirPath` in its own binary
+// builds `<agent>/sessions/--<encoded cwd>--` — so the directory names the
+// project when there is one, and the header's cwd answers for a session file
+// that sits directly under the root (#3678).
+func ParseKimchiFileFromOffset(path string, offset int64) ([]model.Session, error) {
+	return parsePiShaped(path, offset, "kimchi", kimchiProject(path), true)
+}
+
+func kimchiProject(path string) string {
+	dir := projectDir(KimchiRoot(), path)
+	if dir == "" || dir == KimchiRoot() {
+		return ""
+	}
+	return claudeProjectName(dir)
+}

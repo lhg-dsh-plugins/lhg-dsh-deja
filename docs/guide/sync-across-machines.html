@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<script>document.documentElement.className=document.documentElement.className.replace("no-js","js")</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sync coding-agent history between machines — deja-vu</title>
+<meta name="description" content="How to sync between machines without a server: one person, two laptops, one history their agents can all read.">
+<link rel="canonical" href="https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Sync coding-agent history between machines">
+<meta property="og:description" content="How to sync between machines without a server: one person, two laptops, one history their agents can all read.">
+<meta property="og:url" content="https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html">
+<meta property="og:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" sizes="16x16" href="../assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" sizes="any" href="../assets/icon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+
+<meta name="author" content="vshulcz">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#0d0b16">
+<meta name="color-scheme" content="dark light">
+<meta property="og:site_name" content="deja-vu">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="deja-vu — searchable local memory for coding agents">
+<meta name="twitter:title" content="Sync coding-agent history between machines">
+<meta name="twitter:description" content="How to sync between machines without a server: one person, two laptops, one history their agents can all read.">
+<meta name="twitter:image" content="https://vshulcz.github.io/deja-vu/assets/og.png">
+<meta name="twitter:image:alt" content="deja-vu — searchable local memory for coding agents">
+<link rel="apple-touch-icon" href="../assets/icon.svg">
+<link rel="sitemap" type="application/xml" href="https://vshulcz.github.io/deja-vu/sitemap.xml">
+<link rel="describedby" type="text/markdown" href="https://vshulcz.github.io/deja-vu/llms.txt">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Keeping agent history in sync across machines", "description": "How to sync between machines without a server: one person, two laptops, one history their agents can all read.", "url": "https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html", "inLanguage": "en", "author": {"@type": "Person", "name": "vshulcz"}, "publisher": {"@type": "Person", "name": "vshulcz"}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html"}, "isPartOf": {"@type": "WebSite", "name": "deja-vu", "url": "https://vshulcz.github.io/deja-vu/"}, "datePublished": "2026-08-24", "dateModified": "2026-10-21"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"deja-vu","item":"https://vshulcz.github.io/deja-vu/"},{"@type":"ListItem","position":2,"name":"Across machines","item":"https://vshulcz.github.io/deja-vu/guide/sync-across-machines.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can I share coding-agent history between my laptop and my desktop?","acceptedAnswer":{"@type":"Answer","text":"Yes. deja sync ssh <host> exchanges indexed sessions over your own SSH connection, append-only and with no service in the middle."}},{"@type":"Question","name":"Does syncing agent history need a cloud account?","acceptedAnswer":{"@type":"Answer","text":"No. The transport is ssh and scp with the credentials you already use; the remote runs its own deja to import the batch."}},{"@type":"Question","name":"Can I keep synced memory searchable but stop it being injected automatically?","acceptedAnswer":{"@type":"Answer","text":"Yes. A trust policy can allow imported memory for search and MCP while denying it on auto-recall, per origin or per peer machine."}}]}</script>
+</head>
+<body>
+<div class="glow"></div>
+<nav><a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="22" height="22">deja-vu</a><span class="spacer"></span><a class="lnk" href="../">Home</a><a class="lnk" href="getting-started.html">Docs</a><a class="lnk" href="https://github.com/vshulcz/deja-vu">GitHub</a></nav>
+<div class="wrap"><div class="doc">
+<aside><a href="../">← deja-vu</a>
+<div class="grp">Guide</div>
+<a href="getting-started.html">Getting started</a>
+<a href="agents.html">Agents &amp; MCP</a>
+<a href="search.html">Search</a>
+<a href="commands.html">CLI reference</a>
+<a href="harnesses.html">Harnesses</a>
+<a href="privacy.html">Privacy</a>
+<details class="grpfold"><summary>Why agents forget <span class="n">11</span></summary>
+<a href="forgetting.html">Why agents forget</a>
+<a href="does-my-agent-remember.html">Does my agent remember?</a>
+<a href="lost-context.html">Lost context</a>
+<a href="context-window-full.html">Context window full</a>
+<a href="after-compaction.html">After compaction</a>
+<a href="repeated-mistakes.html">Repeated mistakes</a>
+<a href="switching-agents.html">Switching agents</a>
+<a href="parallel-sessions.html">Parallel sessions</a>
+<a href="rules-files.html">When CLAUDE.md grows</a>
+<a href="one-rules-file.html">One rules file</a>
+<a href="token-cost.html">What memory costs</a>
+</details>
+<details class="grpfold" open><summary>Session history <span class="n">11</span></summary>
+<a href="where-sessions-are-stored.html">Where history lives</a>
+<a href="find-a-session.html">Finding a session</a>
+<a href="codex-history.html">Codex history</a>
+<a href="resume-a-session.html">Resuming a session</a>
+<a href="codex-resume-session.html">Codex resume</a>
+<a href="export-conversations.html">Exporting sessions</a>
+<a href="sync-across-machines.html" aria-current="page">Across machines</a>
+<a href="auditing-agents.html">Auditing an agent</a>
+<a href="credentials-in-transcripts.html">Credentials in transcripts</a>
+<a href="recover-a-deleted-session.html">Recover a deleted session</a>
+<a href="no-conversation-found-claude-code.html">No conversation found</a>
+</details>
+<details class="grpfold"><summary>Deleting sessions <span class="n">21</span></summary>
+<a href="session-files-on-disk.html">Claude Code</a>
+<a href="delete-old-claude-sessions.html">Old sessions</a>
+<a href="delete-codex-sessions.html">Codex</a>
+<a href="delete-cursor-chat-history.html">Cursor</a>
+<a href="cursor-state-vscdb-too-large.html">Cursor state.vscdb too large</a>
+<a href="delete-copilot-chat-history.html">Copilot Chat</a>
+<a href="delete-copilot-cli-session-history.html">Copilot CLI</a>
+<a href="delete-gemini-cli-history.html">Gemini CLI</a>
+<a href="delete-opencode-session-history.html">opencode</a>
+<a href="delete-cline-task-history.html">Cline</a>
+<a href="delete-roo-task-history.html">Roo Code</a>
+<a href="delete-zed-thread-history.html">Zed</a>
+<a href="delete-kilo-code-task-history.html">Kilo Code</a>
+<a href="delete-amp-thread-history.html">Amp</a>
+<a href="delete-continue-session-history.html">Continue</a>
+<a href="delete-kiro-session-history.html">Kiro</a>
+<a href="delete-kimi-code-session-history.html">Kimi Code</a>
+<a href="delete-windsurf-cascade-history.html">Windsurf</a>
+<a href="delete-qwen-code-chat-history.html">Qwen Code</a>
+<a href="delete-trae-sessions.html">TRAE CLI</a>
+<a href="delete-codebuddy-sessions.html">CodeBuddy</a>
+</details>
+<details class="grpfold"><summary>Per-agent guides <span class="n">36</span></summary>
+<a href="memory-for-aider.html">aider</a>
+<a href="memory-for-amp.html">Amp</a>
+<a href="memory-for-antigravity.html">Antigravity</a>
+<a href="memory-for-cherrystudio.html">Cherry Studio</a>
+<a href="memory-for-claude-code.html">Claude Code</a>
+<a href="memory-for-cline.html">Cline</a>
+<a href="memory-for-codewhale.html">CodeWhale</a>
+<a href="memory-for-codex.html">Codex</a>
+<a href="memory-for-commandcode.html">Command Code</a>
+<a href="memory-for-continue.html">Continue</a>
+<a href="memory-for-copilot.html">Copilot CLI</a>
+<a href="memory-for-crush.html">Crush</a>
+<a href="memory-for-cursor.html">Cursor</a>
+<a href="memory-for-dsh.html">dsh</a>
+<a href="memory-for-gjc.html">gajae-code</a>
+<a href="memory-for-gemini.html">Gemini CLI</a>
+<a href="memory-for-goose.html">Goose</a>
+<a href="memory-for-grok.html">Grok Build</a>
+<a href="memory-for-hermes.html">Hermes</a>
+<a href="memory-for-kilocode.html">Kilo Code</a>
+<a href="memory-for-kimchi.html">Kimchi Coding</a>
+<a href="memory-for-kimi.html">Kimi Code</a>
+<a href="memory-for-kiro.html">Kiro</a>
+<a href="memory-for-omp.html">omp</a>
+<a href="memory-for-openclaw.html">OpenClaw</a>
+<a href="memory-for-opencode.html">opencode</a>
+<a href="memory-for-pi.html">pi</a>
+<a href="memory-for-prime.html">prime-agent</a>
+<a href="memory-for-qwen.html">Qwen Code</a>
+<a href="memory-for-reasonix.html">Reasonix</a>
+<a href="memory-for-roo.html">Roo Code</a>
+<a href="memory-for-senpi.html">Senpi</a>
+<a href="memory-for-copilot-chat.html">VS Code Copilot Chat</a>
+<a href="memory-for-windsurf.html">Windsurf</a>
+<a href="memory-for-zcode.html">ZCode</a>
+<a href="memory-for-zed.html">Zed</a>
+</details>
+<div class="grp">Evidence</div>
+<a href="benchmarks.html">Benchmarks</a>
+<a href="compare.html">Compare</a>
+<a href="claude-mem-alternative.html">claude-mem alternative</a>
+<a href="day-zero.html">Day zero</a>
+<div class="grp">Reference</div>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a href="https://github.com/vshulcz/deja-vu/blob/main/docs/SECURITY-MODEL.md">Security model</a>
+<a href="../registry/README.html">Format registry</a><a class="sidecat" href="../"><img src="../assets/icon-live.svg" width="46" height="46" alt=""><span>it remembers, so you do not have to</span></a></aside>
+<article>
+
+<h1>Keeping agent history in sync across machines</h1>
+<p class="pagelede">two machines, one person, one history<span class="mins" data-mins></span></p>
+
+<p>Two machines, one person, and no way to sync between machines. The fix you worked out on the laptop is on the laptop, and the desktop's agent has never heard of it. Neither has the work laptop you use three days a week.</p>
+
+<h2>What moves, and how</h2>
+<pre>deja sync ssh desktop           # push what this machine has learned
+deja sync ssh desktop --pull    # take what that one has
+deja sync ssh desktop --both    # both directions in one command
+deja sync                       # every machine deja already knows, both ways</pre>
+<p>The transport is your own SSH: deja exports a batch, copies it with <code>scp</code>, and runs <code>deja sync import</code> on the other side, which is why the remote needs deja installed and reachable the way you already reach it. No account, no service, nothing in the middle. The first exchange with a host records it as a peer, so <code>deja sync</code> afterwards knows who to talk to.</p>
+<p>Transfers are incremental and append-only: each side keeps a watermark and sends what the other has not seen. <code>--full</code> resends everything, which is the recovery path when a batch was lost — the error message says so at the moment it happens rather than leaving you to guess.</p>
+
+<h2>What arrives</h2>
+<p>Indexed sessions, not the harness's raw files. The receiving machine can search them, and every record in a batch carries its <code>origin</code>, the name of the machine the work happened on (<code>DEJA_MACHINE</code>, else the host name), so a hit says "we fixed this on the laptop in July" as a fact you can see rather than one you have to remember, and <code>deja last --from laptop</code> lists that machine's sessions. A session passed on with <code>sync export --include-imported</code> keeps the name of the machine it started on. Redaction runs three times: when each machine indexes its own transcripts, again on export, and again when the receiving machine imports the batch, so a batch written by an older deja is masked by the receiver's rules too. The receiver's switches hold as well: what <code>DEJA_INDEX_*</code> and <code>DEJA_INCLUDE_SUBAGENTS=0</code> keep out of a local read, a store <code>DEJA_EXCLUDE_HARNESSES</code> excludes and a project the policy's <code>ignore</code> rule covers stay out of the import, which says how many it left out, and a machine relaying with <code>--include-imported</code> does not pass on the sessions of a store it excludes.</p>
+
+<h2>Deciding what synced memory may do</h2>
+<p>Memory from another machine is not automatically as trusted as memory from this one — a work laptop's history in a personal session, or the reverse, is a real concern. The trust policy at <code>~/.config/deja/policy.json</code> separates the paths memory can activate on: <code>search</code>, <code>mcp</code> and <code>auto</code>. Synced sessions stay searchable but never inject themselves:</p>
+<pre>{"activations": {"auto": {"imported": false}}}</pre>
+<p>A rule can also be narrower than all imports: <code>imported:&lt;group&gt;</code> matches sessions whose project, on the machine they came from, starts with that directory. It cannot name a machine: the <code>origin</code> on each record is the sender's own name for itself, which nothing verifies, so the policy does not key on it. Receipts and <code>deja log --last</code> name the policy that allowed each injection, so what reached the model is inspectable after the fact rather than a matter of trust.</p>
+
+<h2>Keeping it current</h2>
+<p><code>deja install sync-timer</code> runs the exchange on a schedule, and <code>deja doctor</code> reports each peer with when it last synced — a peer that has quietly stopped is the failure mode worth catching, because everything keeps working and simply stops being shared. The timer runs with the <code>DEJA_*</code> and <code>XDG_*</code> settings of the shell you installed it from, since the service manager does not see your shell; install it again after changing them.</p>
+
+<h2>What this is not</h2>
+<p>It is not a team feature. There is no server, no shared account and no access control beyond the SSH you already have — it moves one person's history between one person's machines. Sharing a single session with somebody else is a different job, and <a href="export-conversations.html"><code>deja share</code></a> does that one.</p>
+
+<p><a href="export-conversations.html">Exporting sessions</a> · <a href="privacy.html">Privacy and trust scopes</a> · <a href="commands.html">CLI reference</a></p>
+<p class="star-cta">Found this useful? <a href="https://github.com/vshulcz/deja-vu">Star deja-vu on GitHub</a>.</p>
+</article>
+</div>
+<footer>deja-vu is MIT-licensed and runs on your machine. <a href="https://github.com/vshulcz/deja-vu">Source on GitHub</a> · <a href="../">Home</a></footer>
+</div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

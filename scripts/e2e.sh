@@ -1,0 +1,81 @@
+#!/bin/sh
+# End-to-end smoke: build the real binary and exercise the user-facing paths
+# against synthetic fixtures. Run from the repo root: sh scripts/e2e.sh
+set -eu
+
+fail() { echo "e2e FAIL: $*" >&2; exit 1; }
+
+go build -o /tmp/deja-e2e ./cmd/deja
+
+SOURCE_HOME="$(mktemp -d)"
+export HOME="$SOURCE_HOME"
+export USERPROFILE="$SOURCE_HOME"
+export DEJA_CLAUDE_ROOT="$PWD/fixtures/synthetic/claude"
+export DEJA_CODEX_ROOT="$PWD/fixtures/synthetic/codex"
+export DEJA_OPENCODE_DB="/tmp/deja-e2e-no.db"
+export DEJA_AIDER_ROOTS="$SOURCE_HOME/aider"
+export DEJA_GEMINI_ROOT="$SOURCE_HOME/gemini"
+export DEJA_CURSOR_ROOT="$SOURCE_HOME/cursor"
+export DEJA_CURSOR_CLI_ROOT="$SOURCE_HOME/cursor-cli"
+export DEJA_ANTIGRAVITY_ROOT="$SOURCE_HOME/antigravity"
+export DEJA_GROK_ROOT="$SOURCE_HOME/grok"
+DEJA_INDEX_DIR="$(mktemp -d)/index.db"
+export DEJA_INDEX_DIR
+export NO_COLOR=1
+
+D=/tmp/deja-e2e
+
+# search finds fixture content
+$D frobnicator | grep -q "frobnicator" || fail "search"
+# second run must be warm and quiet on stderr
+out=$($D frobnicator 2>&1 >/dev/null)
+[ -z "$out" ] || fail "second run not warm: $out"
+# multi-word AND
+$D "frobnicator bug" | grep -q "frobnicator" || fail "multi-word"
+# no stray sqlite file created
+[ ! -e /tmp/deja-e2e-no.db ] || fail "stray opencode.db created"
+# empty result message
+$D zzqqxx 2>&1 | grep -q "no matches" || fail "empty-result message"
+# last + sources + version + help
+$D last 5 | grep -q "claude" || fail "last"
+$D sources | grep -q "claude" || fail "sources"
+$D version | grep -q "deja" || fail "version"
+$D help | grep -q "Usage" || fail "help"
+# bare deja into a pipe is a short welcome that points at the full list (#4621)
+$D | grep -q "deja help" || fail "bare welcome"
+# ctx digest
+$D ctx frobnicator | grep -q "deja context" || fail "ctx"
+# json output is one envelope on every path, and says which tier answered
+$D --json frobnicator | head -1 | grep -q '^{"schema_version"' || fail "json envelope"
+$D --json frobnicator | head -1 | grep -q '"tier":"exact"' || fail "json match"
+# mcp handshake + recall
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0"}}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"recall","arguments":{"query":"frobnicator"}}}\n' \
+  | $D mcp | tail -1 | grep -q "frobnicator" || fail "mcp recall"
+# install into a temp HOME is idempotent and non-destructive
+H=$(mktemp -d)
+mkdir -p "$H/.codex"
+printf 'model = "gpt"\n' > "$H/.codex/config.toml"
+HOME="$H" USERPROFILE="$H" $D install codex | grep -q "updated" || fail "install"
+HOME="$H" USERPROFILE="$H" $D install codex | grep -q "unchanged" || fail "install idempotency"
+grep -q 'model = "gpt"' "$H/.codex/config.toml" || fail "install clobbered config"
+HOME="$H" USERPROFILE="$H" $D uninstall codex | grep -q "updated" || fail "uninstall"
+
+# the per-prompt hook, from a directory named like the fixture's project so
+# auto-recall is in scope. This is the path that carries memory without anyone
+# asking, and nothing here exercised it: the MCP handshake above proves the
+# tool answers when called, not that anything calls it.
+WORK="$(mktemp -d)/project"
+mkdir -p "$WORK"
+( cd "$WORK" && printf '%s\n' '{"prompt":"the frobnicator parser bug again","session_id":"e2e-1"}' | $D hook-prompt ) \
+  | grep -q 'frobnicator' || fail "hook-prompt returned no recall for a prompt about indexed work"
+
+# --auto wires whatever it finds, and doctor agrees with it afterwards. The two
+# disagreeing is the failure a user cannot see: doctor is the command they run
+# when memory is not working.
+A="$(mktemp -d)"
+mkdir -p "$A/.claude"
+printf '{}\n' > "$A/.claude/settings.json"
+HOME="$A" USERPROFILE="$A" $D install --auto >/dev/null 2>&1 || fail "install --auto"
+HOME="$A" USERPROFILE="$A" $D doctor | grep -q "claude-code  wired" || fail "doctor disagrees with install --auto"
+
+echo "e2e OK"

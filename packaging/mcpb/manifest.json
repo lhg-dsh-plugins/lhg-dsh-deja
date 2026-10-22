@@ -1,0 +1,52 @@
+{
+  "manifest_version": "0.3",
+  "name": "deja-vu",
+  "display_name": "deja-vu",
+  "version": "0.0.0",
+  "description": "deja-vu: local memory over the session histories of forty-two coding agents.",
+  "long_description": "deja indexes the session transcripts your coding agents already write to disk — Claude Code, Codex, Cursor, opencode, aider, cline, roo, goose and others — and serves them back over MCP. It starts full rather than empty: history from before you installed it is searchable immediately. Retrieval is lexical, with no LLM, no embedding model and no API key. Secrets are redacted before anything is indexed. Indexing and search have no network path unless semantic search is set up with deja embed, after which each query goes to that endpoint too. Update, the doctor version check, ssh sync and the optional embedding pass are the commands that reach out, each one run on purpose.",
+  "author": {
+    "name": "vshulcz",
+    "url": "https://github.com/vshulcz"
+  },
+  "homepage": "https://vshulcz.github.io/deja-vu/",
+  "documentation": "https://vshulcz.github.io/deja-vu/guide/",
+  "support": "https://github.com/vshulcz/deja-vu/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vshulcz/deja-vu"
+  },
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "search",
+    "session-history",
+    "coding-agents",
+    "local-first",
+    "offline"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/deja",
+    "mcp_config": {
+      "command": "${__dirname}/server/deja",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  },
+  "tools": [
+    {
+      "name": "deja",
+      "description": "This user's own past coding sessions across every AI tool they use, in modes: recall (search), context (one session in full), blame (why a file is like this), fix (what was run or changed after this error), how (the real command for a thing here), orient (what past sessions ran in this project), remember (store a decision)."
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  }
+}

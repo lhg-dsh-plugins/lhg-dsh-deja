@@ -1,0 +1,203 @@
+package bench
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"strings"
+	"time"
+
+	"github.com/vshulcz/deja-vu/internal/model"
+)
+
+const (
+	ContextChainCount    = 30
+	ContextNegativeCount = 5
+	// Fourteen priors and eight facts, the facts in the oldest eight sessions
+	// and the six newest settling nothing. Two properties the column needs: a
+	// block that reads the newest sessions finds nothing, and a block that
+	// prefers the sessions which settled something still cannot carry all eight
+	// within its budget — so the coverage can move in both directions and
+	// saturation is out of reach. At seven priors and three facts it reached two
+	// by recency and the third by choosing well, and once the choosing was
+	// fixed every arm scored 1.00 with nowhere left for a regression to show
+	// (#2931, #2933).
+	ContextPriorCount = 14
+	// contextFactEvery spreads the facts one per session over the oldest eight.
+	contextFactEvery = 1
+)
+
+type ContextChain struct {
+	ID       string
+	Sessions []model.Session
+	Task     string
+	Terms    []string
+	Facts    []string
+	Negative bool
+}
+
+type ContextCorpus struct {
+	Chains []ContextChain
+	Hash   string
+}
+
+// GenerateContext creates chains whose fact text is the benchmark ground truth.
+func GenerateContext(seed int64) ContextCorpus {
+	rng := rand.New(rand.NewSource(seed))
+	chains := make([]ContextChain, 0, ContextChainCount+ContextNegativeCount)
+	base := time.Date(2099, time.January, 3, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < ContextChainCount+ContextNegativeCount; i++ {
+		id := fmt.Sprintf("context-chain-%02d", i)
+		project := fmt.Sprintf("context-project-%02d", i)
+		chain := ContextChain{ID: id, Negative: i >= ContextChainCount}
+		if chain.Negative {
+			chain.Terms = []string{fmt.Sprintf("independent-task-%02d", i)}
+			chain.Task = fmt.Sprintf("Review the independent %s task.", chain.Terms[0])
+		} else {
+			noise := rng.Intn(900) + 100
+			chain.Facts = []string{
+				fmt.Sprintf("%s fact: error fixed by replacing stale etag reuse with generation checks", id),
+				fmt.Sprintf("%s fact: option chosen was bounded refresh with jitter because retries must spread load", id),
+				fmt.Sprintf("%s fact: config value settled at context_ttl=%dm", id, 10+i%7),
+				fmt.Sprintf("%s fact: we decided the retry budget stops at three attempts", id),
+				fmt.Sprintf("%s fact: the scheduler stays single-writer, so the failover drains first", id),
+				fmt.Sprintf("%s fact: agreed to key the cache on generation rather than on mtime", id),
+				fmt.Sprintf("%s fact: settled that the nightly compaction runs after the export", id),
+				fmt.Sprintf("%s fact: chose to drop the second index instead of widening the first", id),
+			}
+			chain.Task = fmt.Sprintf("Handle %s using the prior error, chosen option, and settled context_ttl value.", id)
+			chain.Terms = []string{id}
+			chain.Facts[0] += fmt.Sprintf("; incident %d", noise)
+		}
+		// Real sessions are dominated by working noise — command output,
+		// stack traces, incidental discussion. Without that bulk the
+		// full-history arm looks artificially cheap and the whole
+		// comparison is meaningless, so each prior session carries a
+		// realistic filler load around its one durable fact.
+		for j := 0; j < ContextPriorCount; j++ {
+			// One fact per session, and the sessions past them carry none:
+			// the number of prior sessions is what makes the facts hard to
+			// reach, and indexing Facts by j made the constant unchangeable —
+			// raising it panicked (#2933).
+			// One fact per session, and the sessions past them carry none —
+			// while still naming the chain, so the ranking has to choose which
+			// of them to quote. Indexing Facts by j made the constant
+			// unchangeable (it panicked above three), and filler that did not
+			// name the chain was never retrieved, so raising it changed
+			// nothing either (#2933).
+			text := fmt.Sprintf("%s routine update, nothing settled here", id)
+			fact := -1
+			if chain.Negative {
+				text = "routine update with no prior fact"
+			} else if j%contextFactEvery == 0 && j/contextFactEvery < len(chain.Facts) {
+				// Spread across the chain rather than filed in its first
+				// sessions, so reaching all three means choosing between
+				// sessions rather than reading the newest few.
+				fact = j / contextFactEvery
+			}
+			t := base.Add(time.Duration(i*10+j) * time.Minute)
+			msgs := []model.Message{{Role: "user", Text: text, Time: t}}
+			fillerBlocks := 6 + rng.Intn(10)
+			for k := 0; k < fillerBlocks; k++ {
+				msgs = append(msgs,
+					model.Message{Role: "user", Text: fillerText(rng, "ran the reproduction again and pasted the output"), Time: t.Add(time.Duration(2*k+2) * time.Minute)},
+					model.Message{Role: "assistant", Text: fillerText(rng, "walked through the trace and adjusted the patch"), Time: t.Add(time.Duration(2*k+3) * time.Minute)},
+				)
+			}
+			// The fact is what the session settled, so it sits at the end
+			// rather than opening it. Opening every session with it meant both
+			// surfaces reached all three facts whatever they chose, which is
+			// why coverage stayed at 1.00 with half the arm deleted (#2931).
+			if fact >= 0 {
+				msgs = append(msgs, model.Message{Role: "assistant", Text: chain.Facts[fact],
+					Time: t.Add(time.Duration(2*fillerBlocks+4) * time.Minute)})
+			}
+			msgs = append(msgs, model.Message{Role: "assistant", Text: "Recorded the decision and verified the rollout.", Time: t.Add(time.Hour)})
+			chain.Sessions = append(chain.Sessions, model.Session{
+				ID: fmt.Sprintf("%s-session-%d", id, j), Harness: "claude", Project: project,
+				Started: t, Updated: t, Messages: msgs,
+			})
+		}
+		t := base.Add(time.Duration(i*10+ContextPriorCount) * time.Minute)
+		chain.Sessions = append(chain.Sessions, model.Session{ID: id + "-task", Harness: "claude", Project: project, Started: t, Updated: t, Messages: []model.Message{{Role: "user", Text: chain.Task, Time: t}}})
+		chains = append(chains, chain)
+	}
+	b, _ := json.Marshal(chains)
+	h := sha256.Sum256(b)
+	return ContextCorpus{Chains: chains, Hash: hex.EncodeToString(h[:])}
+}
+
+// fillerText builds a deterministic block of session noise: log-like lines
+// and prose that carry no ground-truth facts but give sessions realistic
+// bulk (roughly 0.5-2KB per block).
+func fillerText(rng *rand.Rand, lead string) string {
+	var b strings.Builder
+	b.WriteString(lead)
+	lines := 4 + rng.Intn(10)
+	for i := 0; i < lines; i++ {
+		fmt.Fprintf(&b, "\n2099-01-%02d %02d:%02d:%02d worker-%d request=%08x latency=%dms status=%d retrying with backoff attempt %d of queue depth %d",
+			1+rng.Intn(27), rng.Intn(24), rng.Intn(60), rng.Intn(60), rng.Intn(8), rng.Uint32(), rng.Intn(900), 200+rng.Intn(4)*100, rng.Intn(5), rng.Intn(40))
+	}
+	return b.String()
+}
+
+// ContextMarathonCount is how many chains the marathon corpus holds. Ten is
+// enough for a median to mean something and cheap enough to index beside the
+// corpus it is derived from.
+const ContextMarathonCount = 10
+
+// GenerateContextMarathon is the same corpus, re-filed. Every prior session of
+// a chain is folded into one long session, so the chain's eight facts sit
+// inside a single session that matches the query hundreds of times instead of
+// across fourteen that match it once each. The content is identical; only the
+// partitioning changes, which is what makes a coverage difference between the
+// two corpora attributable to choosing excerpts inside a session rather than
+// to ranking sessions against each other.
+//
+// Why it exists: on this machine's own store every recall page's deepest hit
+// matched between 24 and 23,278 times, and three excerpts is all a hit may
+// quote of it. No bench corpus had a session of that shape, so the whole class
+// was invisible to `deja bench` — the marathon arm of the prompt bench is the
+// only place a long session appears at all, and it measures ranking, not what
+// the page carries.
+func GenerateContextMarathon(seed int64) ContextCorpus {
+	base := GenerateContext(seed)
+	chains := make([]ContextChain, 0, ContextMarathonCount)
+	for _, chain := range base.Chains {
+		if chain.Negative || len(chains) >= ContextMarathonCount {
+			continue
+		}
+		chains = append(chains, foldChain(chain))
+	}
+	b, _ := json.Marshal(chains)
+	h := sha256.Sum256(b)
+	return ContextCorpus{Chains: chains, Hash: hex.EncodeToString(h[:])}
+}
+
+// foldChain merges a chain's prior sessions into one, keeping the task session
+// apart: the task is what the agent arrives with, not part of the history it
+// searches.
+func foldChain(chain ContextChain) ContextChain {
+	out := chain
+	out.Sessions = nil
+	if len(chain.Sessions) == 0 {
+		return out
+	}
+	priors := chain.Sessions[:len(chain.Sessions)-1]
+	task := chain.Sessions[len(chain.Sessions)-1]
+	if len(priors) == 0 {
+		out.Sessions = []model.Session{task}
+		return out
+	}
+	folded := model.Session{
+		ID: chain.ID + "-marathon", Harness: priors[0].Harness, Project: priors[0].Project,
+		Started: priors[0].Started, Updated: priors[len(priors)-1].Updated,
+	}
+	for _, s := range priors {
+		folded.Messages = append(folded.Messages, s.Messages...)
+	}
+	out.Sessions = []model.Session{folded, task}
+	return out
+}

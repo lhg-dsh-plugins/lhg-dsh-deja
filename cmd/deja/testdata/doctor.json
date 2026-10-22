@@ -1,0 +1,1010 @@
+{
+  "schema_version": 2,
+  "stores": [
+    {
+      "name": "claude",
+      "state": "ok",
+      "paths": [
+        "<tmp>/claude"
+      ],
+      "files": 1,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "codex",
+      "state": "missing",
+      "paths": [
+        "<tmp>/codex",
+        "<tmp>/xcode-codex"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "trae",
+      "state": "missing",
+      "paths": [
+        "<tmp>/trae"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "opencode",
+      "state": "missing",
+      "paths": [
+        "<tmp>/opencode.db"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "aider",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home",
+        "<tmp>/aider"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "gemini",
+      "state": "missing",
+      "paths": [
+        "<tmp>/gemini"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "cursor",
+      "state": "missing",
+      "paths": [
+        "<tmp>/cursor",
+        "<tmp>/cursor-cli"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "antigravity",
+      "state": "missing",
+      "paths": [
+        "<tmp>/antigravity"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "grok",
+      "state": "missing",
+      "paths": [
+        "<tmp>/grok/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "hermes",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.hermes",
+        "<tmp>/home/.hermes/profiles"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "qwen",
+      "state": "missing",
+      "paths": [
+        "<tmp>/qwen/projects"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "codebuddy",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.codebuddy/projects"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "kimi",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.kimi-code/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "goose",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.local/share/goose/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "continue",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.continue/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "crush",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.local/share/crush"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "pi",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.pi/agent/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "omp",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.omp/agent/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "prime",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.prime/agent/sessions",
+        "<tmp>/home/.prime/agent/session-artifacts"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "amp",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.local/share/amp/threads"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "openclaw",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.openclaw/agents"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "copilot",
+      "state": "missing",
+      "paths": [
+        "<tmp>/copilot"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "copilot-chat",
+      "state": "missing",
+      "paths": null,
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "cline",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.cline/data/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "roo",
+      "state": "missing",
+      "paths": null,
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "kilocode",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.local/share/kilo/kilo.db"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "cherrystudio",
+      "state": "missing",
+      "paths": null,
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "kiro",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.kiro/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "senpi",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.senpi/agent/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "kimchi",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.config/kimchi/harness/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "commandcode",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.commandcode/projects"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "zcode",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.zcode/projects",
+        "<tmp>/home/.zcode/cli/db/db.sqlite",
+        "<tmp>/home/.zcode/v2/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "gjc",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.gjc/agent/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "codewhale",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.codewhale/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "junie",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.junie/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "jetbrains",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.config/JetBrains"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "windsurf",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.codeium/windsurf"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "reasonix",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.reasonix"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "muse",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.local/share/muse/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "deepseek",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.dsh/sessions"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "zed",
+      "state": "unplugged",
+      "paths": [
+        "<tmp>/zed/threads/threads.db"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "devin",
+      "state": "missing",
+      "paths": [
+        "<tmp>/home/.local/share/devin/cli/sessions.db",
+        "<tmp>/home/.local/share/devin/cli/cli_sessions.db"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    },
+    {
+      "name": "deja",
+      "state": "missing",
+      "paths": [
+        "<tmp>/notes.jsonl"
+      ],
+      "files": 0,
+      "indexed_sessions": 0
+    }
+  ],
+  "index": {
+    "state": "missing",
+    "path": "<tmp>/index.db",
+    "stale_stores": 0,
+    "sessions_stamped_ahead": 0
+  },
+  "mcp": [
+    {
+      "name": "claude-code",
+      "state": "config-missing",
+      "path": "<tmp>/home/.claude.json"
+    },
+    {
+      "name": "codex",
+      "state": "config-missing",
+      "path": "<tmp>/home/.codex/config.toml"
+    },
+    {
+      "name": "opencode",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/opencode/opencode.json"
+    },
+    {
+      "name": "cursor",
+      "state": "config-missing",
+      "path": "<tmp>/home/.cursor/mcp.json"
+    },
+    {
+      "name": "gemini",
+      "state": "config-missing",
+      "path": "<tmp>/home/.gemini/settings.json"
+    },
+    {
+      "name": "antigravity",
+      "state": "config-missing",
+      "path": "<tmp>/home/.gemini/config/mcp_config.json"
+    },
+    {
+      "name": "grok",
+      "state": "config-missing",
+      "path": "<tmp>/home/.grok/config.toml"
+    },
+    {
+      "name": "qwen",
+      "state": "config-missing",
+      "path": "<tmp>/home/.qwen/settings.json"
+    },
+    {
+      "name": "codebuddy",
+      "state": "config-missing",
+      "path": "<tmp>/home/.codebuddy/.mcp.json"
+    },
+    {
+      "name": "workbuddy",
+      "state": "config-missing",
+      "path": "<tmp>/home/.workbuddy/mcp.json"
+    },
+    {
+      "name": "trae",
+      "state": "config-missing",
+      "path": "<tmp>/home/.trae/traecli.toml"
+    },
+    {
+      "name": "muse",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/muse/settings.json"
+    },
+    {
+      "name": "kimi",
+      "state": "config-missing",
+      "path": "<tmp>/home/.kimi-code/mcp.json"
+    },
+    {
+      "name": "cline",
+      "state": "config-missing",
+      "path": "<tmp>/home/.cline/data/settings/cline_mcp_settings.json"
+    },
+    {
+      "name": "pi",
+      "state": "config-missing",
+      "path": "<tmp>/home/.pi/agent/mcp.json"
+    },
+    {
+      "name": "omp",
+      "state": "config-missing",
+      "path": "<tmp>/home/.omp/agent/mcp.json"
+    },
+    {
+      "name": "amp",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/amp/settings.json"
+    },
+    {
+      "name": "prime",
+      "state": "config-missing",
+      "path": "<tmp>/home/.prime/agent/settings.json"
+    },
+    {
+      "name": "openclaw",
+      "state": "config-missing",
+      "path": "<tmp>/home/.openclaw/openclaw.json"
+    },
+    {
+      "name": "copilot",
+      "state": "config-missing",
+      "path": "<tmp>/home/.copilot/mcp-config.json"
+    },
+    {
+      "name": "vscode",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/Code/User/mcp.json"
+    },
+    {
+      "name": "hermes",
+      "state": "config-missing",
+      "path": "<tmp>/home/.hermes/config.yaml"
+    },
+    {
+      "name": "goose",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/goose/config.yaml"
+    },
+    {
+      "name": "continue",
+      "state": "config-missing",
+      "path": "<tmp>/home/.continue/config.yaml"
+    },
+    {
+      "name": "crush",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/crush/crush.json"
+    },
+    {
+      "name": "zed",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/zed/settings.json"
+    },
+    {
+      "name": "devin",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/devin/mcp_config.json"
+    },
+    {
+      "name": "deepseek",
+      "state": "config-missing",
+      "path": "<tmp>/home/.dsh/cordis.patch.yml"
+    },
+    {
+      "name": "roo",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json"
+    },
+    {
+      "name": "kilocode",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/Code/User/globalStorage/kilocode.kilo-code/settings/mcp_settings.json"
+    },
+    {
+      "name": "kiro",
+      "state": "config-missing",
+      "path": "<tmp>/home/.kiro/settings/mcp.json"
+    },
+    {
+      "name": "senpi",
+      "state": "config-missing",
+      "path": "<tmp>/home/.senpi/agent/mcp.json"
+    },
+    {
+      "name": "kimchi",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/kimchi/harness/mcp.json"
+    },
+    {
+      "name": "codewhale",
+      "state": "config-missing",
+      "path": "<tmp>/home/.codewhale/mcp.json"
+    },
+    {
+      "name": "junie",
+      "state": "config-missing",
+      "path": "<tmp>/home/.junie/mcp/mcp.json"
+    },
+    {
+      "name": "jetbrains",
+      "state": "config-missing",
+      "path": "<tmp>/home/.ai/mcp/mcp.json"
+    },
+    {
+      "name": "windsurf",
+      "state": "config-missing",
+      "path": "<tmp>/home/.codeium/windsurf/mcp_config.json"
+    },
+    {
+      "name": "gjc",
+      "state": "config-missing",
+      "path": "<tmp>/home/.gjc/agent/mcp.json"
+    },
+    {
+      "name": "zcode",
+      "state": "config-missing",
+      "path": "<tmp>/home/.zcode/cli/setting.json"
+    },
+    {
+      "name": "commandcode",
+      "state": "config-missing",
+      "path": "<tmp>/home/.commandcode/mcp.json"
+    },
+    {
+      "name": "cherrystudio",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/deja/cherrystudio-mcp.json"
+    },
+    {
+      "name": "reasonix",
+      "state": "config-missing",
+      "path": "<tmp>/home/.reasonix/plugins/deja/reasonix-plugin.json"
+    },
+    {
+      "name": "trae-ide",
+      "state": "config-missing",
+      "path": "<tmp>/home/.config/Trae/User/mcp.json"
+    }
+  ],
+  "auto_recall": [
+    {
+      "name": "claude-code",
+      "state": "missing",
+      "path": "<tmp>/home/.claude/settings.json"
+    },
+    {
+      "name": "codex-hook",
+      "state": "missing",
+      "path": "<tmp>/home/.codex/hooks.json"
+    },
+    {
+      "name": "opencode",
+      "state": "missing",
+      "path": "<tmp>/home/.config/opencode/plugins/deja.js"
+    },
+    {
+      "name": "kilocode",
+      "state": "missing",
+      "path": "<tmp>/home/.config/kilo/plugins/deja.js"
+    },
+    {
+      "name": "cursor",
+      "state": "missing",
+      "path": "<tmp>/home/.cursor/hooks.json"
+    },
+    {
+      "name": "gemini",
+      "state": "missing",
+      "path": "<tmp>/home/.gemini/extensions/deja/hooks/hooks.json"
+    },
+    {
+      "name": "qwen",
+      "state": "missing",
+      "path": "<tmp>/home/.qwen/settings.json"
+    },
+    {
+      "name": "codebuddy",
+      "state": "missing",
+      "path": "<tmp>/home/.codebuddy/settings.json"
+    },
+    {
+      "name": "workbuddy",
+      "state": "missing",
+      "path": "<tmp>/home/.workbuddy/settings.json"
+    },
+    {
+      "name": "trae",
+      "state": "missing",
+      "path": "<tmp>/home/.trae/cli/hooks.json"
+    },
+    {
+      "name": "muse",
+      "state": "missing",
+      "path": "<tmp>/home/.config/muse/settings.json"
+    },
+    {
+      "name": "kimi",
+      "state": "missing",
+      "path": "<tmp>/home/.kimi-code/config.toml"
+    },
+    {
+      "name": "antigravity",
+      "state": "missing",
+      "path": "<tmp>/home/.gemini/config/plugins/deja/hooks.json"
+    },
+    {
+      "name": "pi",
+      "state": "missing",
+      "path": "<tmp>/home/.pi/agent/extensions/deja.ts"
+    },
+    {
+      "name": "senpi",
+      "state": "missing",
+      "path": "<tmp>/home/.senpi/agent/extensions/deja.ts"
+    },
+    {
+      "name": "gjc",
+      "state": "missing",
+      "path": "<tmp>/home/.gjc/agent/extensions/deja.ts"
+    },
+    {
+      "name": "cherrystudio",
+      "state": "missing",
+      "path": "<tmp>/home/.config/CherryStudio/Data/Agents/.claude/settings.json"
+    },
+    {
+      "name": "codewhale",
+      "state": "missing",
+      "path": "<tmp>/home/.codewhale/config.toml"
+    },
+    {
+      "name": "junie",
+      "state": "missing",
+      "path": "<tmp>/home/.junie/config.json"
+    },
+    {
+      "name": "kimchi",
+      "state": "missing",
+      "path": "<tmp>/home/.config/kimchi/harness/extensions/deja.ts"
+    },
+    {
+      "name": "hermes",
+      "state": "missing",
+      "path": "<tmp>/home/.hermes/plugins/deja/__init__.py"
+    },
+    {
+      "name": "openclaw",
+      "state": "missing",
+      "path": "<tmp>/home/.openclaw/hooks/deja-recall/handler.js"
+    },
+    {
+      "name": "cline",
+      "state": "missing",
+      "path": "<tmp>/home/.cline/plugins/deja/index.js"
+    },
+    {
+      "name": "omp",
+      "state": "missing",
+      "path": "<tmp>/home/.omp/agent/extensions/deja/index.js"
+    },
+    {
+      "name": "amp",
+      "state": "missing",
+      "path": "<tmp>/home/.config/amp/plugins/deja.ts"
+    },
+    {
+      "name": "prime",
+      "state": "missing",
+      "path": "<tmp>/home/.prime/agent/extensions/deja.ts"
+    },
+    {
+      "name": "deepseek",
+      "state": "missing",
+      "path": "<tmp>/home/.dsh/plugins/deja/auto.js"
+    },
+    {
+      "name": "goose",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/plugins/deja/hooks/hooks.json"
+    },
+    {
+      "name": "crush",
+      "state": "missing",
+      "path": "<tmp>/home/.config/crush/crush.json"
+    },
+    {
+      "name": "grok",
+      "state": "missing",
+      "path": "<tmp>/home/.grok/hooks/deja.json"
+    },
+    {
+      "name": "devin",
+      "state": "missing",
+      "path": "<tmp>/home/.config/devin/config.json"
+    },
+    {
+      "name": "kiro",
+      "state": "missing",
+      "path": "<tmp>/home/.kiro/hooks/deja.json"
+    },
+    {
+      "name": "copilot",
+      "state": "missing",
+      "path": "<tmp>/home/.copilot/hooks/deja.json"
+    },
+    {
+      "name": "vscode",
+      "state": "missing",
+      "path": "<tmp>/home/.copilot/hooks/deja.json"
+    },
+    {
+      "name": "zcode",
+      "state": "missing",
+      "path": "<tmp>/home/.zcode/cli/setting.json"
+    },
+    {
+      "name": "commandcode",
+      "state": "missing",
+      "path": "<tmp>/home/.commandcode/settings.json"
+    },
+    {
+      "name": "reasonix",
+      "state": "missing",
+      "path": "<tmp>/home/.reasonix/plugins/deja/reasonix-plugin.json"
+    },
+    {
+      "name": "aider",
+      "state": "missing",
+      "path": "<tmp>/home/.config/deja/aider-context.md"
+    },
+    {
+      "name": "roo",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "trae-ide",
+      "state": "missing",
+      "path": "<tmp>/home/.trae/hooks.json"
+    }
+  ],
+  "commands": [
+    {
+      "name": "claude-code",
+      "state": "missing",
+      "path": "<tmp>/home/.claude/commands/deja.md"
+    },
+    {
+      "name": "opencode",
+      "state": "missing",
+      "path": "<tmp>/home/.config/opencode/commands/deja.md"
+    },
+    {
+      "name": "cursor",
+      "state": "missing",
+      "path": "<tmp>/home/.cursor/commands/deja.md"
+    },
+    {
+      "name": "roo",
+      "state": "missing",
+      "path": "<tmp>/home/.roo/commands/deja.md"
+    },
+    {
+      "name": "kilocode",
+      "state": "missing",
+      "path": "<tmp>/home/.config/kilo/commands/deja.md"
+    },
+    {
+      "name": "crush",
+      "state": "missing",
+      "path": "<tmp>/home/.config/crush/commands/deja.md"
+    },
+    {
+      "name": "omp",
+      "state": "missing",
+      "path": "<tmp>/home/.omp/agent/commands/deja.md"
+    },
+    {
+      "name": "gjc",
+      "state": "missing",
+      "path": "<tmp>/home/.gjc/agent/commands/deja.md"
+    },
+    {
+      "name": "commandcode",
+      "state": "missing",
+      "path": "<tmp>/home/.commandcode/commands/deja.md"
+    },
+    {
+      "name": "codebuddy",
+      "state": "missing",
+      "path": "<tmp>/home/.codebuddy/commands/deja.md"
+    },
+    {
+      "name": "workbuddy",
+      "state": "missing",
+      "path": "<tmp>/home/.workbuddy/commands/deja.md"
+    },
+    {
+      "name": "zcode",
+      "state": "missing",
+      "path": "<tmp>/home/.zcode/commands/deja.md"
+    },
+    {
+      "name": "junie",
+      "state": "missing",
+      "path": "<tmp>/home/.junie/commands/deja.md"
+    },
+    {
+      "name": "kiro",
+      "state": "missing",
+      "path": "<tmp>/home/.kiro/prompts/deja.md"
+    },
+    {
+      "name": "codewhale",
+      "state": "missing",
+      "path": "<tmp>/home/.codewhale/commands/deja.md"
+    },
+    {
+      "name": "windsurf",
+      "state": "missing",
+      "path": "<tmp>/home/.codeium/windsurf/global_workflows/deja.md"
+    },
+    {
+      "name": "copilot-chat",
+      "state": "missing",
+      "path": "<tmp>/home/.config/Code/User/prompts/deja.prompt.md"
+    },
+    {
+      "name": "reasonix",
+      "state": "missing",
+      "path": "<tmp>/home/.reasonix/plugins/deja/commands/deja.md"
+    },
+    {
+      "name": "continue",
+      "state": "missing",
+      "path": "<tmp>/home/.continue/config.yaml"
+    },
+    {
+      "name": "goose",
+      "state": "missing",
+      "path": "<tmp>/home/.config/goose/config.yaml"
+    },
+    {
+      "name": "antigravity",
+      "state": "missing",
+      "path": "<tmp>/home/.gemini/config/plugins/deja/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "codex",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "copilot",
+      "state": "missing",
+      "path": "<tmp>/home/.copilot/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "gemini",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "grok",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "kimi",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "openclaw",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "qwen",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "trae",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "muse",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    },
+    {
+      "name": "zed",
+      "state": "missing",
+      "path": "<tmp>/home/.agents/skills/deja-history/SKILL.md"
+    }
+  ],
+  "sqlite3": {
+    "state": "missing"
+  },
+  "git": {
+    "state": "missing"
+  },
+  "version": {
+    "state": "update-available",
+    "current": "1.0.0",
+    "latest": "2.0.0"
+  },
+  "policy": {
+    "state": "default",
+    "path": "<tmp>/home/.config/deja/policy.json",
+    "indexed_sessions": 0,
+    "activations": {
+      "auto": {
+        "rule": "local+imported",
+        "withheld": 0
+      },
+      "mcp": {
+        "rule": "local+imported",
+        "withheld": 0
+      },
+      "search": {
+        "rule": "local+imported",
+        "withheld": 0
+      }
+    }
+  },
+  "sync": {
+    "state": "ok",
+    "peers": []
+  }
+}

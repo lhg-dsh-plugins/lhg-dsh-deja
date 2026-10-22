@@ -1,0 +1,373 @@
+# The packages under extensions/ are published into other people's ecosystems
+# — npm for opencode and dsh, the Zed registry for Zed. They break from
+# upstream API changes rather than from our commits, so this also runs weekly.
+name: extensions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/**'
+      - '.github/workflows/extensions.yml'
+  pull_request:
+    paths:
+      - 'extensions/**'
+      - '.github/workflows/extensions.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extensions-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  opencode:
+    name: opencode-deja
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extensions/opencode
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: The plugin has to parse
+        run: node --check index.js && node --check server.js && node --check lib.js
+
+      - run: npm test
+
+      - name: The hooks we implement have to still exist in opencode's plugin API
+        run: |
+          npm pack @opencode-ai/plugin --silent >/dev/null
+          tar xzf opencode-ai-plugin-*.tgz
+          node -e '
+            const fs = require("node:fs");
+            const api = fs.readFileSync("package/dist/index.d.ts", "utf8");
+            const plugin = fs.readFileSync("index.js", "utf8");
+            const hooks = [...plugin.matchAll(/hooks\["([a-z.]+)"\]/g)].map((m) => m[1]);
+            if (!hooks.length) throw new Error("no hooks found in index.js");
+            const missing = hooks.filter((h) => !api.includes("\"" + h + "\"?:"));
+            if (missing.length) {
+              console.error("opencode no longer declares: " + missing.join(", "));
+              process.exit(1);
+            }
+            console.log("hooks still declared: " + hooks.join(", "));
+          '
+
+  openclaw:
+    name: openclaw-deja
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extensions/openclaw
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: The plugin has to parse
+        run: node --check index.mjs && node --check lib.mjs
+
+      - name: The manifest declares every tool the runtime registers
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const manifest = JSON.parse(fs.readFileSync("openclaw.plugin.json", "utf8"));
+            const src = fs.readFileSync("index.mjs", "utf8");
+            const registered = [...src.matchAll(/name: "(deja_[a-z]+)"/g)].map((m) => m[1]);
+            const declared = manifest.contracts.tools;
+            const missing = registered.filter((t) => !declared.includes(t));
+            if (!registered.length || missing.length) {
+              console.error("contracts.tools is missing: " + missing.join(", "));
+              process.exit(1);
+            }
+            console.log("declared: " + declared.join(", "));
+          '
+
+      - run: npm test
+
+  pi:
+    name: pi-deja
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extensions/pi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: The extension has to load under node's type stripping, the way pi loads it
+        run: |
+          node --check lib.mjs
+          node --experimental-strip-types -e "const m = await import('./index.ts'); if (typeof m.default !== 'function') throw new Error('no default export')"
+
+      - name: The manifest carries the gallery keyword and the entry it points at exists
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            if (!pkg.keywords.includes("pi-package")) throw new Error("pi-package keyword missing: the gallery lists by it");
+            for (const key of ["pi", "omp"]) {
+              for (const e of pkg[key].extensions) if (!fs.existsSync(e)) throw new Error(key + ".extensions names a missing file: " + e);
+            }
+            console.log("ok:", pkg.pi.extensions.join(","));
+          '
+
+      - run: npm test
+
+  dsh:
+    name: dsh-deja
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extensions/dsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: The plugin has to parse
+        run: node --check index.js && node --check client.js
+
+      - run: npm test
+
+      - name: The manifest has to declare a bundle patch, or dsh cannot install it
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const patch = pkg.dsh && pkg.dsh.bundle && pkg.dsh.bundle.patch;
+            if (patch !== "./cordis.patch.yml") {
+              console.error("package.json must declare dsh.bundle.patch = ./cordis.patch.yml");
+              process.exit(1);
+            }
+            const fs = require("node:fs");
+            const rows = fs.readFileSync("cordis.patch.yml", "utf8");
+            if (!rows.includes("name: " + pkg.name)) {
+              console.error("cordis.patch.yml must name the package it loads: " + pkg.name);
+              process.exit(1);
+            }
+          '
+
+  zed:
+    name: zed-deja
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: extensions/zed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The guard below reads history, not just the tree.
+          fetch-depth: 0
+
+      - name: Install the target Zed compiles extensions to
+        run: rustup target add wasm32-wasip1
+
+      - name: Build
+        run: cargo build --release --target wasm32-wasip1
+
+      - name: The id in extension.toml must match what the registry lists
+        run: |
+          id=$(grep -m1 '^id = ' extension.toml | cut -d'"' -f2)
+          test "$id" = "deja-mcp-server" || {
+            echo "extension.toml id is '$id'; zed-industries/extensions lists it as deja-mcp-server"
+            exit 1
+          }
+
+      - name: A change to the extension must move its version
+        run: |
+          # Zed installs whatever version the registry lists, so a fix that
+          # lands here without a bump reaches nobody. `/deja` was fixed in
+          # #3020 and sat unpublished behind 0.1.0 until this check existed.
+          version_commit=$(git log -1 --format=%H -G'^version = ' -- extension.toml)
+          source_commit=$(git log -1 --format=%H -- src Cargo.toml)
+          if [ -z "$version_commit" ] || [ -z "$source_commit" ]; then
+            echo "cannot read the history of extensions/zed; not failing on that"
+            exit 0
+          fi
+          if git merge-base --is-ancestor "$source_commit" "$version_commit"; then
+            exit 0
+          fi
+          echo "extensions/zed changed after its version last moved:"
+          echo "  source  $(git log -1 --format='%h %s' "$source_commit")"
+          echo "  version $(git log -1 --format='%h %s' "$version_commit")"
+          echo "Bump version in extension.toml, or Zed users keep the build they already have."
+          exit 1
+
+  kimi:
+    name: kimi-deja
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extensions/kimi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: The plugin has to parse
+        run: node --check lib.mjs && node --check hooks/recall.mjs && node --check bin/deja-mcp.mjs
+
+      - run: npm test
+
+      - name: The manifest has to stay loadable by Kimi
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const m = JSON.parse(fs.readFileSync("kimi.plugin.json", "utf8"));
+            let bad = 0;
+            // Kimi ignores what it does not know, and reports it as a
+            // diagnostic nobody reads: a typo here is a capability that
+            // silently never arrives.
+            const known = new Set(["name", "version", "description", "keywords", "author", "homepage", "license", "interface", "skills", "agents", "commands", "sessionStart", "skillInstructions", "systemPrompt", "systemPromptPath", "mcpServers", "hooks"]);
+            for (const key of Object.keys(m)) {
+              if (!known.has(key)) { console.error("unknown manifest field: " + key); bad++; }
+            }
+            // A hook command is a shell line, the script followed by the deja
+            // subcommand and its flags: the path is the token that starts with
+            // ./, and one has to be there.
+            const hookPaths = (m.hooks ?? []).map((h) => h.command.split(/\s+/).find((t) => t.startsWith("./")) ?? h.command);
+            for (const rel of [m.skills, m.commands, ...hookPaths, ...Object.values(m.mcpServers ?? {}).flatMap((s) => s.args ?? [])]) {
+              if (typeof rel !== "string" || !rel.startsWith("./")) { console.error("path must start with ./ : " + rel); bad++; continue; }
+              if (!fs.existsSync(rel)) { console.error("manifest points outside the plugin: " + rel); bad++; }
+            }
+            process.exit(bad ? 1 : 0);
+          '
+
+  grok:
+    name: grok-deja
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extensions/grok
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: The plugin has to parse
+        run: node --check lib.mjs && node --check hooks/recall.mjs && node --check bin/deja-mcp.mjs
+
+      - run: node --test test/*.test.mjs
+
+      - name: The bundle has to stay loadable by Grok
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            let bad = 0;
+            // Grok discovers components from fixed paths, so a rename here is a
+            // capability that silently never arrives.
+            for (const path of [".grok-plugin/plugin.json", ".mcp.json", "hooks/hooks.json", "commands/recall.md", "skills/deja-history/SKILL.md"]) {
+              if (!fs.existsSync(path)) { console.error("missing: " + path); bad++; }
+            }
+            const manifest = JSON.parse(fs.readFileSync(".grok-plugin/plugin.json", "utf8"));
+            for (const key of ["name", "version", "description", "license"]) {
+              if (!manifest[key]) { console.error("manifest has no " + key); bad++; }
+            }
+            // Every command Grok runs from this bundle is resolved against
+            // GROK_PLUGIN_ROOT: a bare relative path would be resolved against
+            // the session directory instead, which is wherever the user is.
+            const mcp = JSON.parse(fs.readFileSync(".mcp.json", "utf8"));
+            const hooks = JSON.parse(fs.readFileSync("hooks/hooks.json", "utf8"));
+            const commands = [
+              ...Object.values(mcp.mcpServers ?? {}).flatMap((s) => s.args ?? []),
+              ...Object.values(hooks.hooks ?? {}).flat().flatMap((g) => (g.hooks ?? []).map((h) => h.command)),
+            ];
+            // Spelled without its opening brace on purpose: shellcheck reads a
+            // dollar-brace sequence inside this single-quoted script as a shell
+            // expansion someone forgot to quote, and fails the lint.
+            const rootVar = "GROK_PLUGIN_ROOT}/";
+            for (const command of commands) {
+              const at = String(command).indexOf(rootVar);
+              if (at < 0) { console.error("path is not rooted at the plugin: " + command); bad++; continue; }
+              // The path runs to its closing quote or the first space: a hook
+              // passes the deja subcommand after it.
+              const rel = String(command).slice(at + rootVar.length).split(/["\s]/)[0];
+              if (!fs.existsSync(rel)) { console.error("points at a file that is not in the bundle: " + rel); bad++; }
+            }
+            process.exit(bad ? 1 : 0);
+          '
+
+  metadata:
+    name: packages point at this repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      # The release publishes these packages, so the decisions it makes about
+      # versions are tested here rather than discovered during a release.
+      - name: The release script's version rules
+        run: node --test scripts/release_npm_test.mjs
+
+      - name: The drift guard's own rules
+        run: node --test scripts/extension_drift_test.mjs
+
+      # A package npm holds ahead of the release line is skipped by every
+      # release, silently, until the project's version passes it — dsh-deja sat
+      # that way from 25 August. That has caught up, so this fails rather than
+      # reports: 0.20.2 left opencode-deja and openclaw-deja a release behind
+      # and the log said so for a day with nobody reading it (#3776). The fix
+      # is one command, which the failure prints.
+      - name: No harness package is stranded ahead of the release line
+        run: |
+          git fetch --tags --quiet || true
+          node scripts/extension-drift.mjs
+
+      # Published metadata is what a user follows back to the source. When a
+      # package moves, npm keeps serving the old repository field until someone
+      # notices; this notices.
+      - name: package.json repository and directory have to match where the file lives
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            let bad = 0;
+            for (const dir of ["extensions/opencode", "extensions/dsh", "extensions/openclaw", "extensions/pi"]) {
+              const pkg = JSON.parse(fs.readFileSync(dir + "/package.json", "utf8"));
+              const repo = pkg.repository || {};
+              if (!String(repo.url || "").includes("vshulcz/deja-vu")) {
+                console.error(dir + ": repository.url does not point at vshulcz/deja-vu");
+                bad++;
+              }
+              if (repo.directory !== dir) {
+                console.error(dir + ": repository.directory is " + repo.directory);
+                bad++;
+              }
+              if (!fs.existsSync(dir + "/LICENSE")) {
+                console.error(dir + ": no LICENSE in the published directory");
+                bad++;
+              }
+            }
+            // Zed reads the licence from the extension directory the registry
+            // builds, not from the repository root: a monorepo entry with the
+            // licence only at the top fails packaging with "No license was
+            // found."
+            if (!fs.existsSync("extensions/zed/LICENSE")) {
+              console.error("extensions/zed: no LICENSE where Zed looks for it");
+              bad++;
+            }
+            process.exit(bad ? 1 : 0);
+          '
