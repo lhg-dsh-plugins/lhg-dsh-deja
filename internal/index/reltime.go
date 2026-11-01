@@ -51,6 +51,14 @@ func monthOccurrence(m time.Month, now time.Time) time.Time {
 	return time.Date(year, m, 1, 0, 0, 0, 0, now.Location())
 }
 
+// prevMonth returns a time in the calendar month before t's. AddDate(0,-1,0)
+// normalizes month-end dates forward (2026-10-31 becomes 2026-10-01), which
+// would read "last month" as the current month, so step back from the first
+// of t's month instead.
+func prevMonth(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()).AddDate(0, 0, -1)
+}
+
 // relativeTimeTerms turns relative-time phrases in a query into the month
 // tokens the ingest writes for every message, so "which book did I finish a
 // week ago" can meet sessions from that month structurally. Only the
@@ -83,7 +91,7 @@ func relativeTimeTerms(q string, now time.Time) []string {
 			case "week":
 				add(now.AddDate(0, 0, -7))
 			case "month":
-				add(now.AddDate(0, -1, 0))
+				add(prevMonth(now))
 			case "year":
 				add(now.AddDate(-1, 0, 0))
 			default: // weekday: within the previous 7 days

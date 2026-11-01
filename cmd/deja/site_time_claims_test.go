@@ -52,7 +52,11 @@ func firstHitID(t *testing.T, out string, ids ...string) string {
 // stay out of the way where they do not.
 func TestTimeHintsRankOnlyTheNoExactMatchFallback(t *testing.T) {
 	now := time.Now()
-	lastMonth := now.AddDate(0, -1, 0)
+	// A day in the previous calendar month. now.AddDate(0,-1,0) normalizes
+	// month-end dates forward (2026-10-31 becomes 2026-10-01), which put
+	// m_last in the current month and left the hint nothing to tell apart —
+	// the same normalization reltime.go's "last month" had to stop using.
+	lastMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -1)
 	dir := datedStore(t, map[string]string{
 		// Dated in the same calendar deja reads "last month" in — the local
 		// one. Formatted through UTC and taken two hours back, the newest
